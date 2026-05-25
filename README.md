@@ -21,6 +21,18 @@ Open `http://127.0.0.1:8000/docs` for the API docs.
 - `DELETE /api/documents/{book_id}` removes SQLite metadata and Chroma vectors for a book.
 - `POST /api/chat` retrieves matching Arabic chunks and generates an Indonesian answer.
 
+## RAG Accuracy Controls
+
+The chat pipeline retrieves broad candidates, merges query variants with reciprocal rank fusion, expands neighboring chunks, and runs a completeness scan for numbered list questions. Re-import EPUB files after changing chunking or embedding settings so new metadata such as headings, neighbor ids, and text hashes is available.
+
+Useful knobs:
+
+- `RETRIEVAL_CANDIDATE_K`: broad first-pass retrieval count.
+- `RETRIEVAL_FINAL_K`: final source count sent to the LLM.
+- `RETRIEVAL_NEIGHBOR_WINDOW`: adjacent chunk expansion depth.
+- `RAG_ENABLE_COMPLETENESS_SCAN`: include numbered headings from the same book for complete-list questions.
+- `LLM_TEMPERATURE`: generation temperature; default is `0` for more deterministic grounded answers.
+
 ## Embedding Provenance
 
 Every book and vector chunk stores:

@@ -37,22 +37,30 @@ class LLMProvider(Protocol):
 class GeminiLLMProvider:
     name = "gemini"
 
-    def __init__(self, api_key: str, model: str):
+    def __init__(self, api_key: str, model: str, temperature: float):
         self.model = model
+        self.temperature = temperature
         from google import genai
+        from google.genai import types
 
         self.client = genai.Client(api_key=api_key)
+        self.types = types
 
     def generate(self, prompt: str) -> str:
-        response = self.client.models.generate_content(model=self.model, contents=prompt)
+        response = self.client.models.generate_content(
+            model=self.model,
+            contents=prompt,
+            config=self.types.GenerateContentConfig(temperature=self.temperature),
+        )
         return getattr(response, "text", None) or ""
 
 
 class GroqLLMProvider:
     name = "groq"
 
-    def __init__(self, api_key: str, model: str):
+    def __init__(self, api_key: str, model: str, temperature: float):
         self.model = model
+        self.temperature = temperature
         from groq import Groq
 
         self.client = Groq(api_key=api_key)
@@ -61,15 +69,16 @@ class GroqLLMProvider:
         completion = self.client.chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
+            temperature=self.temperature,
         )
         return completion.choices[0].message.content or ""
 
 
 class OpenAICompatibleLLMProvider:
-    def __init__(self, *, name: str, api_key: str, model: str, base_url: str):
+    def __init__(self, *, name: str, api_key: str, model: str, base_url: str, temperature: float):
         self.name = name
         self.model = model
+        self.temperature = temperature
         from openai import OpenAI
 
         self.client = OpenAI(api_key=api_key, base_url=base_url)
@@ -78,7 +87,7 @@ class OpenAICompatibleLLMProvider:
         completion = self.client.chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
+            temperature=self.temperature,
         )
         return completion.choices[0].message.content or ""
 
@@ -124,11 +133,11 @@ def build_llm_provider(provider_name: str, settings: Settings) -> LLMProvider:
     if provider_name == "gemini":
         if not settings.gemini_api_key:
             raise ValueError("GEMINI_API_KEY is missing")
-        return GeminiLLMProvider(settings.gemini_api_key, settings.gemini_llm_model)
+        return GeminiLLMProvider(settings.gemini_api_key, settings.gemini_llm_model, settings.llm_temperature)
     if provider_name == "groq":
         if not settings.groq_api_key:
             raise ValueError("GROQ_API_KEY is missing")
-        return GroqLLMProvider(settings.groq_api_key, settings.groq_llm_model)
+        return GroqLLMProvider(settings.groq_api_key, settings.groq_llm_model, settings.llm_temperature)
     if provider_name == "openrouter":
         if not settings.openrouter_api_key:
             raise ValueError("OPENROUTER_API_KEY is missing")
@@ -137,6 +146,7 @@ def build_llm_provider(provider_name: str, settings: Settings) -> LLMProvider:
             api_key=settings.openrouter_api_key,
             model=settings.openrouter_llm_model,
             base_url="https://openrouter.ai/api/v1",
+            temperature=settings.llm_temperature,
         )
     if provider_name == "openai_compatible":
         if not settings.openai_compatible_api_key:
@@ -150,5 +160,6 @@ def build_llm_provider(provider_name: str, settings: Settings) -> LLMProvider:
             api_key=settings.openai_compatible_api_key,
             model=settings.openai_compatible_model,
             base_url=settings.openai_compatible_base_url,
+            temperature=settings.llm_temperature,
         )
     raise ValueError(f"Unsupported LLM provider: {provider_name}")

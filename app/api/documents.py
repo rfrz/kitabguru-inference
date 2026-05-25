@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import tempfile
 from pathlib import Path
@@ -12,10 +13,10 @@ from app.config import Settings
 from app.database import get_session
 from app.dependencies import get_app_settings, get_chroma_store, get_embedding_provider
 from app.models import Document
-from app.providers.embeddings import EmbeddingProvider, build_embedding_profile
+from app.providers.embeddings import EmbeddingProfile, EmbeddingProvider, build_embedding_profile
 from app.schemas import DocumentImportResponse, DocumentRead, EmbeddingState
 from app.services.chroma_store import ChromaStore
-from app.services.epub_ingestion import chunk_chapters, extract_epub
+from app.services.epub_ingestion import Chunk, chunk_chapters, extract_epub
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -75,19 +76,14 @@ async def import_document(
             f"{book_id}_chapter_{chunk.chapter}_chunk_{chunk.chunk_index}"
             for chunk in chunks
         ]
-        metadatas = [
-            {
-                "book_id": book_id,
-                "title": resolved_title,
-                "chapter": chunk.chapter,
-                "chunk_index": chunk.chunk_index,
-                "embedding_provider": profile.provider,
-                "embedding_model": profile.model,
-                "embedding_dimension": actual_dimension,
-                "embedding_fingerprint": profile.fingerprint,
-            }
-            for chunk in chunks
-        ]
+        metadatas = _build_chunk_metadatas(
+            chunks=chunks,
+            ids=ids,
+            book_id=book_id,
+            title=resolved_title,
+            profile=profile,
+            actual_dimension=actual_dimension,
+        )
         chroma_store.add_chunks(
             ids=ids,
             documents=texts,
@@ -157,3 +153,33 @@ async def _write_temp_upload(file: UploadFile) -> str:
                 break
             temp_file.write(chunk)
         return temp_file.name
+
+
+def _build_chunk_metadatas(
+    *,
+    chunks: list[Chunk],
+    ids: list[str],
+    book_id: str,
+    title: str,
+    profile: EmbeddingProfile,
+    actual_dimension: int | None,
+) -> list[dict]:
+    return [
+        {
+            "book_id": book_id,
+            "chunk_id": ids[index],
+            "title": title,
+            "chapter": chunk.chapter,
+            "chunk_index": chunk.chunk_index,
+            "heading": chunk.heading,
+            "heading_number": chunk.heading_number or 0,
+            "prev_id": ids[index - 1] if index > 0 else "",
+            "next_id": ids[index + 1] if index + 1 < len(ids) else "",
+            "text_hash": hashlib.sha256(chunk.text.encode("utf-8")).hexdigest(),
+            "embedding_provider": profile.provider,
+            "embedding_model": profile.model,
+            "embedding_dimension": actual_dimension,
+            "embedding_fingerprint": profile.fingerprint,
+        }
+        for index, chunk in enumerate(chunks)
+    ]

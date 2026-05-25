@@ -65,5 +65,36 @@ class ChromaStore:
             for item_id, document, metadata, distance in zip(ids, documents, metadatas, distances)
         ]
 
+    def get_by_ids(self, ids: list[str]) -> list[SearchResult]:
+        if not ids:
+            return []
+        response = self.collection.get(
+            ids=ids,
+            include=["documents", "metadatas"],
+        )
+        return self._results_from_get_response(response)
+
+    def get_chunks(self, *, where: Optional[dict[str, Any]] = None, limit: Optional[int] = None) -> list[SearchResult]:
+        kwargs: dict[str, Any] = {"include": ["documents", "metadatas"]}
+        if where is not None:
+            kwargs["where"] = where
+        if limit is not None:
+            kwargs["limit"] = limit
+        response = self.collection.get(**kwargs)
+        return self._results_from_get_response(response)
+
     def delete_book(self, book_id: str) -> None:
         self.collection.delete(where={"book_id": book_id})
+
+    def _results_from_get_response(self, response: dict[str, Any]) -> list[SearchResult]:
+        ids = response.get("ids", [])
+        documents = response.get("documents", [])
+        metadatas = response.get("metadatas", [])
+        return [
+            SearchResult(
+                id=item_id,
+                document=document,
+                metadata=metadata or {},
+            )
+            for item_id, document, metadata in zip(ids, documents, metadatas)
+        ]

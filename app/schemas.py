@@ -20,6 +20,9 @@ class ChatResponse(BaseModel):
     answer: str
     provider_used: str
     sources: list[Source]
+    answer_status: Optional[str] = None
+    retrieval_summary: Optional[dict[str, Any]] = None
+    citations: list[str] = Field(default_factory=list)
 
 
 class EmbeddingState(BaseModel):

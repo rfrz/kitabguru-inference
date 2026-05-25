@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     chroma_path: str = "./data/chroma"
     chroma_collection: str = "epub_collection"
     retrieval_top_k: int = 5
+    retrieval_candidate_k: int = 30
+    retrieval_final_k: int = 12
+    retrieval_neighbor_window: int = 1
+    rag_enable_completeness_scan: bool = True
     chunk_size: int = 1200
     chunk_overlap: int = 160
 
@@ -32,6 +36,7 @@ class Settings(BaseSettings):
     gemini_embedding_model: str = "text-embedding-004"
 
     llm_fallback_order: str = "gemini,groq,openrouter,openai_compatible"
+    llm_temperature: float = 0.0
     gemini_llm_model: str = "gemini-1.5-flash"
     groq_api_key: Optional[str] = None
     groq_llm_model: str = "llama3-70b-8192"

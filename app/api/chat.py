@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+import re
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
@@ -14,16 +15,25 @@ from app.providers.embeddings import EmbeddingProfile
 from app.providers.llm import AllLLMProvidersFailed, LLMRouter
 from app.schemas import ChatRequest, ChatResponse, Source
 from app.services.chroma_store import ChromaStore
+from app.services.retrieval import retrieve_context
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
-PROMPT_TEMPLATE = """Kamu adalah asisten AI. Jawab pertanyaan pengguna dalam Bahasa Indonesia menggunakan konteks dokumen berbahasa Arab berikut.
+PROMPT_TEMPLATE = """Kamu adalah asisten AI untuk tanya jawab kitab.
+Jawab dalam Bahasa Indonesia hanya berdasarkan konteks dokumen berbahasa Arab berikut.
 
 Konteks:
 {context}
 
 Pertanyaan:
 {query}
+
+Aturan jawaban:
+- Setiap klaim faktual harus didukung sumber dengan format [S1], [S2], dan seterusnya.
+- Jika pertanyaan meminta daftar berjumlah tertentu, berikan setiap poin yang terbukti dari konteks.
+- Jika konteks hanya membuktikan sebagian poin, jawab parsial dan sebutkan bahwa sisanya belum terbukti dari konteks yang diberikan.
+- Jangan menyatakan bahwa dokumen asli tidak memuat daftar lengkap kecuali semua sumber yang diberikan memang membuktikan hal itu.
+- Jangan menambahkan poin dari pengetahuan umum atau hafalan di luar konteks.
 """
 
 
@@ -39,16 +49,15 @@ def chat(
     current_profile = build_embedding_profile(settings)
     _raise_if_stale_embeddings(session, request.book_filter, current_profile)
 
-    query_embedding = embedding_provider.embed_query(request.query)
-    where = _build_chroma_filter(
-        book_id=request.book_filter,
+    retrieval = retrieve_context(
+        query=request.query,
+        book_filter=request.book_filter,
         embedding_fingerprint=current_profile.fingerprint,
+        settings=settings,
+        embedding_provider=embedding_provider,
+        chroma_store=chroma_store,
     )
-    results = chroma_store.similarity_search(
-        query_embedding=query_embedding,
-        top_k=settings.retrieval_top_k,
-        where=where,
-    )
+    results = retrieval.results
 
     sources = [
         Source(
@@ -64,9 +73,12 @@ def chat(
             answer="Saya tidak menemukan konteks dokumen yang relevan untuk menjawab pertanyaan tersebut.",
             provider_used="none",
             sources=[],
+            answer_status="insufficient",
+            retrieval_summary=retrieval.summary,
+            citations=[],
         )
 
-    context = "\n\n---\n\n".join(result.document for result in results)
+    context = _format_sources_for_prompt(results)
     prompt = PROMPT_TEMPLATE.format(context=context, query=request.query)
     try:
         generation = llm_router.generate(prompt)
@@ -79,10 +91,26 @@ def chat(
             },
         ) from exc
 
-    return ChatResponse(
+    citations = _extract_valid_citations(generation.answer, source_count=len(results))
+    answer_status = _answer_status(
         answer=generation.answer,
+        citations=citations,
+        valid_citation_marker_count=_count_valid_citation_markers(generation.answer, source_count=len(results)),
+        requested_count=retrieval.requested_count,
+    )
+    answer = _ensure_partial_notice(
+        generation.answer,
+        answer_status=answer_status,
+        requested_count=retrieval.requested_count,
+    )
+
+    return ChatResponse(
+        answer=answer,
         provider_used=generation.provider_used,
         sources=sources,
+        answer_status=answer_status,
+        retrieval_summary=retrieval.summary,
+        citations=citations,
     )
 
 
@@ -136,10 +164,78 @@ def _stale_embedding_error(documents: list[Document], current_profile: Embedding
     )
 
 
-def _build_chroma_filter(book_id: Optional[str], embedding_fingerprint: str) -> dict[str, Any]:
-    filters: list[dict[str, Any]] = [{"embedding_fingerprint": embedding_fingerprint}]
-    if book_id:
-        filters.append({"book_id": book_id})
-    if len(filters) == 1:
-        return filters[0]
-    return {"$and": filters}
+def _format_sources_for_prompt(results) -> str:
+    formatted = []
+    for index, result in enumerate(results, start=1):
+        metadata = result.metadata
+        heading = metadata.get("heading") or "-"
+        formatted.append(
+            "\n".join(
+                [
+                    f"[S{index}]",
+                    f"book_id: {metadata.get('book_id', '-')}",
+                    f"title: {metadata.get('title', '-')}",
+                    f"chapter: {metadata.get('chapter', '-')}",
+                    f"chunk_index: {metadata.get('chunk_index', '-')}",
+                    f"heading: {heading}",
+                    "text:",
+                    result.document,
+                ]
+            )
+        )
+    return "\n\n---\n\n".join(formatted)
+
+
+def _extract_valid_citations(answer: str, *, source_count: int) -> list[str]:
+    citations = []
+    for raw in re.findall(r"\[S([0-9]+)\]", answer):
+        index = int(raw)
+        if 1 <= index <= source_count:
+            citations.append(f"S{index}")
+    return list(dict.fromkeys(citations))
+
+
+def _answer_status(
+    *,
+    answer: str,
+    citations: list[str],
+    valid_citation_marker_count: int,
+    requested_count: Optional[int],
+) -> str:
+    lowered = answer.lower()
+    if ("tidak menemukan konteks" in lowered or "tidak cukup" in lowered) and not citations:
+        return "insufficient"
+
+    if requested_count:
+        listed_points = _count_listed_points(answer)
+        if listed_points >= requested_count and valid_citation_marker_count >= requested_count:
+            return "complete"
+        if citations or listed_points:
+            return "partial"
+        return "insufficient"
+
+    return "complete" if citations else "partial"
+
+
+def _count_listed_points(answer: str) -> int:
+    return len(re.findall(r"(?m)^\s*(?:[0-9]{1,2}[\).]|[-*])\s+", answer))
+
+
+def _count_valid_citation_markers(answer: str, *, source_count: int) -> int:
+    count = 0
+    for raw in re.findall(r"\[S([0-9]+)\]", answer):
+        index = int(raw)
+        if 1 <= index <= source_count:
+            count += 1
+    return count
+
+
+def _ensure_partial_notice(answer: str, *, answer_status: str, requested_count: Optional[int]) -> str:
+    if answer_status != "partial" or "parsial" in answer.lower():
+        return answer
+    if requested_count:
+        return (
+            "Jawaban parsial: konteks yang ditemukan belum cukup untuk memverifikasi "
+            f"seluruh {requested_count} poin yang diminta.\n\n{answer}"
+        )
+    return f"Jawaban parsial berdasarkan konteks yang ditemukan.\n\n{answer}"
