@@ -37,7 +37,7 @@ class Settings(BaseSettings):
 
     llm_fallback_order: str = "gemini,groq,openrouter,openai_compatible"
     llm_temperature: float = 0.0
-    gemini_llm_model: str = "gemini-1.5-flash"
+    gemini_llm_model: str = "gemini-3.1-flash-lite"
     groq_api_key: Optional[str] = None
     groq_llm_model: str = "llama3-70b-8192"
     openrouter_api_key: Optional[str] = None
