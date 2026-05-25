@@ -14,6 +14,22 @@ uvicorn app.main:app --reload
 
 Open `http://127.0.0.1:8000/docs` for the API docs.
 
+## Streamlit Playground
+
+Run the FastAPI backend first:
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+```
+
+In another terminal, run the temporary Streamlit playground:
+
+```powershell
+.\.venv\Scripts\streamlit.exe run playground_streamlit.py --server.port 8501
+```
+
+Open `http://127.0.0.1:8501` to upload EPUB files, manage imported documents, and test chat inference against the running backend. The playground uses `http://127.0.0.1:8000` as the default API base URL.
+
 ## Main Endpoints
 
 - `POST /api/documents/import` imports an EPUB, chunks Arabic text, embeds it, and stores document metadata.
