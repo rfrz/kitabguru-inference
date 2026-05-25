@@ -1,0 +1,30 @@
+[project]
+name = "kitabguru-inference"
+version = "0.1.0"
+description = "Cross-lingual RAG inference engine for Arabic EPUB knowledge bases and Indonesian answers."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "beautifulsoup4>=4.12.3",
+    "chromadb>=0.5.0",
+    "ebooklib>=0.18",
+    "fastapi>=0.115.0",
+    "google-genai>=1.0.0",
+    "groq>=0.9.0",
+    "huggingface-hub>=0.23.0",
+    "openai>=1.40.0",
+    "pydantic-settings>=2.4.0",
+    "python-multipart>=0.0.9",
+    "sqlmodel>=0.0.22",
+    "uvicorn[standard]>=0.30.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "httpx>=0.27.0",
+    "pytest>=8.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
