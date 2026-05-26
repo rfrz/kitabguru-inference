@@ -32,10 +32,32 @@ Open `http://127.0.0.1:8501` to upload EPUB files, manage imported documents, an
 
 ## Main Endpoints
 
-- `POST /api/documents/import` imports an EPUB, chunks Arabic text, embeds it, and stores document metadata.
-- `GET /api/documents` lists imported books and whether their embeddings match the current `.env` embedding config.
-- `DELETE /api/documents/{book_id}` removes SQLite metadata and Chroma vectors for a book.
-- `POST /api/chat` retrieves matching Arabic chunks and generates an Indonesian answer.
+- `GET /health`
+  - Healthcheck endpoint to verify if the server is running.
+  - **Response**: `{"status": "ok"}`
+
+- `POST /api/documents/import`
+  - Imports an EPUB, chunks Arabic text, embeds it, and stores document metadata.
+  - **Request (Multipart Form Data)**:
+    - `file`: The EPUB file to upload (required).
+    - `title`: Title of the book (optional).
+    - `author`: Author of the book (optional).
+  - **Response**: JSON containing `book_id`, `title`, `author`, `total_chunks`, and `embedding` state.
+
+- `GET /api/documents`
+  - Lists imported books and whether their embeddings match the current `.env` embedding config.
+  - **Response**: JSON Array of document metadata.
+
+- `DELETE /api/documents/{book_id}`
+  - Removes SQLite metadata and Chroma vectors for a book.
+  - **Response**: HTTP 204 No Content.
+
+- `POST /api/chat`
+  - Retrieves matching Arabic chunks and generates an Indonesian answer.
+  - **Request (JSON)**:
+    - `query` (string): The question to ask in Indonesian.
+    - `book_filter` (string, optional): A specific `book_id` to restrict the search.
+  - **Response**: JSON containing the generated `answer`, `provider_used`, list of `sources` (chunks), `answer_status`, and `citations`.
 
 ## RAG Accuracy Controls
 
