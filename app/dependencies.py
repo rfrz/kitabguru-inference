@@ -27,6 +27,13 @@ def get_qdrant_store() -> QdrantStore:
     return get_qdrant_store_cached()
 
 
+def close_qdrant_store() -> None:
+    if get_qdrant_store_cached.cache_info().currsize > 0:
+        store = get_qdrant_store_cached()
+        if hasattr(store, "client") and store.client:
+            store.client.close()
+
+
 def get_llm_router() -> LLMRouter:
     return LLMRouter.from_settings(get_settings())
 

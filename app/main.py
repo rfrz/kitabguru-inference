@@ -14,10 +14,13 @@ logging.basicConfig(level=logging.INFO)
 settings = get_settings()
 
 
+from app.dependencies import close_qdrant_store
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
     yield
+    close_qdrant_store()
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
