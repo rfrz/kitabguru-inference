@@ -1,3 +1,12 @@
+---
+title: KitabGuru Inference Engine
+emoji: 📚
+colorFrom: green
+colorTo: emerald
+sdk: docker
+app_port: 7860
+---
+
 # KitabGuru Inference Engine
 
 FastAPI backend for a cross-lingual RAG workflow: Arabic EPUB content is embedded into ChromaDB, while Indonesian queries are answered through a fallback LLM router.
