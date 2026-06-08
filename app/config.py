@@ -21,11 +21,12 @@ class Settings(BaseSettings):
     qdrant_location: str = "./data/qdrant"
     qdrant_api_key: Optional[str] = None
     qdrant_collection: str = "epub_collection"
-    retrieval_top_k: int = 5
     retrieval_candidate_k: int = 30
     retrieval_final_k: int = 12
     retrieval_neighbor_window: int = 1
     rag_enable_completeness_scan: bool = True
+    rag_max_eval_retries: int = 3
+    evaluator_llm_model: Optional[str] = None
     chunk_size: int = 1200
     chunk_overlap: int = 160
 

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
+import json
+import re
 
 from app.config import Settings
 
@@ -126,6 +128,22 @@ class LLMRouter:
                 failures.append(failure)
                 logger.warning("LLM provider %s failed: %s", provider.name, exc)
         raise AllLLMProvidersFailed(failures=failures)
+
+    def generate_json(self, prompt: str) -> dict[str, Any]:
+        result = self.generate(prompt)
+        return _parse_json(result.answer)
+
+
+def _parse_json(text: str) -> dict[str, Any]:
+    text = text.strip()
+    match = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
+    if match:
+        text = match.group(1).strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        logger.warning("Failed to parse JSON from LLM response: %s", text)
+        return {}
 
 
 def build_llm_provider(provider_name: str, settings: Settings) -> LLMProvider:

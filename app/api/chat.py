@@ -15,7 +15,7 @@ from app.providers.embeddings import EmbeddingProfile
 from app.providers.llm import AllLLMProvidersFailed, LLMRouter
 from app.schemas import ChatRequest, ChatResponse, Source
 from app.services.qdrant_store import QdrantStore
-from app.services.retrieval import retrieve_context
+from app.services.retrieval import retrieve_context, expand_with_neighbors, dedupe_results
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -34,6 +34,18 @@ Aturan jawaban:
 - Jika konteks hanya membuktikan sebagian poin, jawab parsial dan sebutkan bahwa sisanya belum terbukti dari konteks yang diberikan.
 - Jangan menyatakan bahwa dokumen asli tidak memuat daftar lengkap kecuali semua sumber yang diberikan memang membuktikan hal itu.
 - Jangan menambahkan poin dari pengetahuan umum atau hafalan di luar konteks.
+"""
+
+EVAL_PROMPT_TEMPLATE = """Kamu adalah evaluator sistem RAG.
+Baca konteks berikut dan tentukan apakah konteks tersebut sudah memuat cukup poin untuk menjawab pertanyaan.
+Jawab HANYA dengan objek JSON valid, tanpa markdown tambahan.
+Format wajib: {{"is_complete": boolean, "found_count": integer}}
+
+Konteks:
+{context}
+
+Pertanyaan (butuh {requested_count} poin):
+{query}
 """
 
 
@@ -58,6 +70,35 @@ def chat(
         qdrant_store=qdrant_store,
     )
     results = retrieval.results
+
+    if retrieval.requested_count and retrieval.requested_count > 0:
+        for _ in range(settings.rag_max_eval_retries):
+            if not results:
+                break
+            
+            context = _format_sources_for_prompt(results)
+            eval_prompt = EVAL_PROMPT_TEMPLATE.format(
+                context=context,
+                requested_count=retrieval.requested_count,
+                query=request.query
+            )
+            
+            try:
+                eval_result = llm_router.generate_json(eval_prompt)
+            except Exception:
+                break
+            
+            is_complete = eval_result.get("is_complete", False)
+            found_count = eval_result.get("found_count", 0)
+            
+            if is_complete or found_count >= retrieval.requested_count:
+                break
+                
+            new_results = expand_with_neighbors(results, qdrant_store=qdrant_store, window=settings.retrieval_neighbor_window)
+            merged = dedupe_results(results + new_results)
+            if len(merged) <= len(results):
+                break
+            results = merged
 
     sources = [
         Source(
