@@ -6,6 +6,7 @@ from typing import Any, Optional
 
 from app.config import Settings
 from app.providers.embeddings import EmbeddingProvider
+from app.providers.llm import LLMRouter
 from app.services.qdrant_store import QdrantStore, SearchResult
 
 
@@ -43,6 +44,21 @@ ARABIC_QUERY_HINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
+BOOK_ROUTING_PROMPT_TEMPLATE = """Kamu adalah evaluator RAG.
+Berikut adalah cuplikan konteks dari beberapa buku hasil pencarian awal.
+Tentukan buku mana (book_id) yang paling relevan dan berpotensi menjawab pertanyaan berikut.
+Boleh memilih lebih dari satu buku jika memang relevan.
+Jawab HANYA dengan JSON valid.
+Format: {{"relevant_book_ids": ["book_id_1", "book_id_2"]}}
+
+Konteks:
+{context}
+
+Pertanyaan:
+{query}
+"""
+
+
 @dataclass
 class RetrievedContext:
     results: list[SearchResult]
@@ -70,6 +86,7 @@ def retrieve_context(
     settings: Settings,
     embedding_provider: EmbeddingProvider,
     qdrant_store: QdrantStore,
+    evaluator_llm_router: Optional[LLMRouter] = None,
 ) -> RetrievedContext:
     query_variants = build_query_variants(query)
     where = build_vector_filter(book_id=book_filter, embedding_fingerprint=embedding_fingerprint)
@@ -80,6 +97,20 @@ def retrieve_context(
         embedding_provider=embedding_provider,
         qdrant_store=qdrant_store,
     )
+
+    if evaluator_llm_router and not book_filter:
+        unique_book_ids = list(dict.fromkeys(str(c.metadata.get("book_id", "")) for c in candidates if c.metadata.get("book_id")))
+        if len(unique_book_ids) > 1:
+            from app.api.chat import _format_sources_for_prompt
+            context = _format_sources_for_prompt(candidates)
+            prompt = BOOK_ROUTING_PROMPT_TEMPLATE.format(context=context, query=query)
+            try:
+                eval_result = evaluator_llm_router.generate_json(prompt)
+                relevant_book_ids = eval_result.get("relevant_book_ids", [])
+                if relevant_book_ids and isinstance(relevant_book_ids, list):
+                    candidates = [c for c in candidates if str(c.metadata.get("book_id", "")) in relevant_book_ids]
+            except Exception:
+                pass
 
     requested_count = extract_requested_count(query)
     selected = candidates[: settings.retrieval_final_k]

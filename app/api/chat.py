@@ -69,6 +69,7 @@ def chat(
         settings=settings,
         embedding_provider=embedding_provider,
         qdrant_store=qdrant_store,
+        evaluator_llm_router=evaluator_llm_router,
     )
     results = retrieval.results
 
