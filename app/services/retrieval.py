@@ -194,6 +194,18 @@ def build_query_variants(query: str) -> list[str]:
 
 def extract_requested_count(query: str) -> Optional[int]:
     lowered = query.lower()
+    
+    # Kumpulan kata kunci yang memicu permintaan daftar/poin
+    trigger_keywords = (
+        "sebutkan", "sebut", "sebutin", "jelaskan", "jelasin", "berikan", 
+        "tuliskan", "papar", "rincikan", "apa saja", "seluruh", "semua", 
+        "berapa", "poin", "macam", "jenis", "adab", "syarat", "rukun", "cara"
+    )
+    
+    # Jika pertanyaan tidak mengandung kata pemicu di atas, abaikan pencarian angka
+    if not any(trigger in lowered for trigger in trigger_keywords):
+        return None
+
     ignore_prefixes = ("ke-", "hadis ", "bab ", "ayat ", "pasal ", "halaman ", "surah ", "surat ", "nomor ", "no ")
 
     for match in re.finditer(r"(?<!ke-)\b([0-9]{1,2})\b", lowered):
