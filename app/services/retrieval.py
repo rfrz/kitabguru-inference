@@ -193,7 +193,10 @@ def build_query_variants(query: str) -> list[str]:
 
 
 def extract_requested_count(query: str) -> Optional[int]:
-    lowered = query.lower()
+    # Hapus teks di dalam tanda kutip ('...' atau "...") agar angka di dalam judul buku/kutipan diabaikan
+    import re
+    query_no_quotes = re.sub(r"['\"].*?['\"]", "", query)
+    lowered = query_no_quotes.lower()
     
     # Kumpulan kata kunci yang memicu permintaan daftar/poin
     trigger_keywords = (
