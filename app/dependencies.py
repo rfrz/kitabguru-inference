@@ -38,5 +38,9 @@ def get_llm_router() -> LLMRouter:
     return LLMRouter.from_settings(get_settings())
 
 
+def get_evaluator_llm_router() -> LLMRouter:
+    return LLMRouter.from_settings(get_settings(), is_evaluator=True)
+
+
 def get_app_settings() -> Settings:
     return get_settings()

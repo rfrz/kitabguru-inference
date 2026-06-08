@@ -100,13 +100,15 @@ class LLMRouter:
         self.unavailable = unavailable or []
 
     @classmethod
-    def from_settings(cls, settings: Settings) -> "LLMRouter":
+    def from_settings(cls, settings: Settings, is_evaluator: bool = False) -> "LLMRouter":
         providers: list[LLMProvider] = []
         unavailable: list[ProviderFailure] = []
+        
+        provider_order = settings.evaluator_llm_provider_order if is_evaluator else settings.llm_provider_order
 
-        for provider_name in settings.llm_provider_order:
+        for provider_name in provider_order:
             try:
-                provider = build_llm_provider(provider_name, settings)
+                provider = build_llm_provider(provider_name, settings, is_evaluator)
             except Exception as exc:
                 unavailable.append(ProviderFailure(provider=provider_name, error=str(exc)))
                 logger.info("Skipping unavailable LLM provider %s: %s", provider_name, exc)
@@ -146,38 +148,54 @@ def _parse_json(text: str) -> dict[str, Any]:
         return {}
 
 
-def build_llm_provider(provider_name: str, settings: Settings) -> LLMProvider:
+def build_llm_provider(provider_name: str, settings: Settings, is_evaluator: bool = False) -> LLMProvider:
     provider_name = provider_name.strip().lower()
+    
     if provider_name == "gemini":
-        if not settings.gemini_api_key:
+        api_key = (settings.evaluator_gemini_api_key or settings.gemini_api_key) if is_evaluator else settings.gemini_api_key
+        model = (settings.evaluator_gemini_llm_model or settings.gemini_llm_model) if is_evaluator else settings.gemini_llm_model
+        if not api_key:
             raise ValueError("GEMINI_API_KEY is missing")
-        return GeminiLLMProvider(settings.gemini_api_key, settings.gemini_llm_model, settings.llm_temperature)
+        return GeminiLLMProvider(api_key, model, settings.llm_temperature)
+        
     if provider_name == "groq":
-        if not settings.groq_api_key:
+        api_key = (settings.evaluator_groq_api_key or settings.groq_api_key) if is_evaluator else settings.groq_api_key
+        model = (settings.evaluator_groq_llm_model or settings.groq_llm_model) if is_evaluator else settings.groq_llm_model
+        if not api_key:
             raise ValueError("GROQ_API_KEY is missing")
-        return GroqLLMProvider(settings.groq_api_key, settings.groq_llm_model, settings.llm_temperature)
+        return GroqLLMProvider(api_key, model, settings.llm_temperature)
+        
     if provider_name == "openrouter":
-        if not settings.openrouter_api_key:
+        api_key = (settings.evaluator_openrouter_api_key or settings.openrouter_api_key) if is_evaluator else settings.openrouter_api_key
+        model = (settings.evaluator_openrouter_llm_model or settings.openrouter_llm_model) if is_evaluator else settings.openrouter_llm_model
+        if not api_key:
             raise ValueError("OPENROUTER_API_KEY is missing")
         return OpenAICompatibleLLMProvider(
             name="openrouter",
-            api_key=settings.openrouter_api_key,
-            model=settings.openrouter_llm_model,
+            api_key=api_key,
+            model=model,
             base_url="https://openrouter.ai/api/v1",
             temperature=settings.llm_temperature,
         )
+        
     if provider_name == "openai_compatible":
-        if not settings.openai_compatible_api_key:
+        api_key = (settings.evaluator_openai_compatible_api_key or settings.openai_compatible_api_key) if is_evaluator else settings.openai_compatible_api_key
+        base_url = (settings.evaluator_openai_compatible_base_url or settings.openai_compatible_base_url) if is_evaluator else settings.openai_compatible_base_url
+        model = (settings.evaluator_openai_compatible_model or settings.openai_compatible_model) if is_evaluator else settings.openai_compatible_model
+        
+        if not api_key:
             raise ValueError("OPENAI_COMPATIBLE_API_KEY is missing")
-        if not settings.openai_compatible_base_url:
+        if not base_url:
             raise ValueError("OPENAI_COMPATIBLE_BASE_URL is missing")
-        if not settings.openai_compatible_model:
+        if not model:
             raise ValueError("OPENAI_COMPATIBLE_MODEL is missing")
+            
         return OpenAICompatibleLLMProvider(
             name="openai_compatible",
-            api_key=settings.openai_compatible_api_key,
-            model=settings.openai_compatible_model,
-            base_url=settings.openai_compatible_base_url,
+            api_key=api_key,
+            model=model,
+            base_url=base_url,
             temperature=settings.llm_temperature,
         )
+        
     raise ValueError(f"Unsupported LLM provider: {provider_name}")

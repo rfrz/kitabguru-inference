@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 
 from app.config import Settings
 from app.database import get_session
-from app.dependencies import get_app_settings, get_qdrant_store, get_embedding_provider, get_llm_router
+from app.dependencies import get_app_settings, get_qdrant_store, get_embedding_provider, get_llm_router, get_evaluator_llm_router
 from app.models import Document
 from app.providers.embeddings import EmbeddingProvider, build_embedding_profile
 from app.providers.embeddings import EmbeddingProfile
@@ -57,6 +57,7 @@ def chat(
     embedding_provider: EmbeddingProvider = Depends(get_embedding_provider),
     qdrant_store: QdrantStore = Depends(get_qdrant_store),
     llm_router: LLMRouter = Depends(get_llm_router),
+    evaluator_llm_router: LLMRouter = Depends(get_evaluator_llm_router),
 ) -> ChatResponse:
     current_profile = build_embedding_profile(settings)
     _raise_if_stale_embeddings(session, request.book_filter, current_profile)
@@ -84,7 +85,7 @@ def chat(
             )
             
             try:
-                eval_result = llm_router.generate_json(eval_prompt)
+                eval_result = evaluator_llm_router.generate_json(eval_prompt)
             except Exception:
                 break
             

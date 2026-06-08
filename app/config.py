@@ -26,7 +26,6 @@ class Settings(BaseSettings):
     retrieval_neighbor_window: int = 1
     rag_enable_completeness_scan: bool = True
     rag_max_eval_retries: int = 3
-    evaluator_llm_model: Optional[str] = None
     chunk_size: int = 1200
     chunk_overlap: int = 160
 
@@ -48,6 +47,17 @@ class Settings(BaseSettings):
     openai_compatible_base_url: Optional[str] = None
     openai_compatible_model: Optional[str] = None
 
+    evaluator_llm_fallback_order: str = "gemini,groq,openrouter,openai_compatible"
+    evaluator_gemini_api_key: Optional[str] = None
+    evaluator_gemini_llm_model: Optional[str] = None
+    evaluator_groq_api_key: Optional[str] = None
+    evaluator_groq_llm_model: Optional[str] = None
+    evaluator_openrouter_api_key: Optional[str] = None
+    evaluator_openrouter_llm_model: Optional[str] = None
+    evaluator_openai_compatible_api_key: Optional[str] = None
+    evaluator_openai_compatible_base_url: Optional[str] = None
+    evaluator_openai_compatible_model: Optional[str] = None
+
     @property
     def cors_origin_list(self) -> list[str]:
         if self.cors_origins.strip() == "*":
@@ -63,6 +73,14 @@ class Settings(BaseSettings):
         return [
             provider.strip().lower()
             for provider in self.llm_fallback_order.split(",")
+            if provider.strip()
+        ]
+
+    @property
+    def evaluator_llm_provider_order(self) -> list[str]:
+        return [
+            provider.strip().lower()
+            for provider in self.evaluator_llm_fallback_order.split(",")
             if provider.strip()
         ]
 
