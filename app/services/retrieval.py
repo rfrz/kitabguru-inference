@@ -13,16 +13,15 @@ from app.services.qdrant_store import QdrantStore, SearchResult
 RRF_RANK_CONSTANT = 60
 
 NUMBER_WORDS: dict[str, int] = {
-    "satu": 1,
-    "dua": 2,
-    "tiga": 3,
-    "empat": 4,
-    "lima": 5,
-    "enam": 6,
-    "tujuh": 7,
-    "delapan": 8,
-    "sembilan": 9,
-    "sepuluh": 10,
+    # Indonesian
+    "satu": 1, "dua": 2, "tiga": 3, "empat": 4, "lima": 5,
+    "enam": 6, "tujuh": 7, "delapan": 8, "sembilan": 9, "sepuluh": 10,
+    # English
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    # Japanese Kanji
+    "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
+    "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
 }
 
 ARABIC_QUERY_HINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -193,35 +192,53 @@ def build_query_variants(query: str) -> list[str]:
 
 
 def extract_requested_count(query: str) -> Optional[int]:
-    # Hapus teks di dalam tanda kutip ('...' atau "...") agar angka di dalam judul buku/kutipan diabaikan
     import re
     query_no_quotes = re.sub(r"['\"].*?['\"]", "", query)
     lowered = query_no_quotes.lower()
     
-    # Kumpulan kata kunci yang memicu permintaan daftar/poin
     trigger_keywords = (
         "sebutkan", "sebut", "sebutin", "jelaskan", "jelasin", "berikan", 
         "tuliskan", "papar", "rincikan", "apa saja", "seluruh", "semua", 
-        "berapa", "poin", "macam", "jenis", "adab", "syarat", "rukun", "cara"
+        "berapa", "poin", "macam", "jenis", "adab", "syarat", "rukun", "cara",
+        "explain", "list", "what are", "all", "types", "conditions", "pillars", "ways", "how many",
+        "説明", "教えて", "リスト", "すべて", "種類", "条件", "方法", "いくつ", "何"
     )
     
-    # Jika pertanyaan tidak mengandung kata pemicu di atas, abaikan pencarian angka
     if not any(trigger in lowered for trigger in trigger_keywords):
         return None
 
-    ignore_prefixes = ("ke-", "hadis ", "bab ", "ayat ", "pasal ", "halaman ", "surah ", "surat ", "nomor ", "no ")
+    ignore_prefixes = (
+        "ke-", "hadis ", "bab ", "ayat ", "pasal ", "halaman ", "surah ", "surat ", "nomor ", "no ",
+        "chapter ", "page ", "number ",
+        "第"
+    )
+    ignore_suffixes = (
+        "st", "nd", "rd", "th",
+        "目", "番", "章", "ページ"
+    )
+
+    def is_ignored(start_idx: int, end_idx: int) -> bool:
+        context_before = lowered[max(0, start_idx - 10):start_idx]
+        context_after = lowered[end_idx:min(len(lowered), end_idx + 10)]
+        if any(context_before.endswith(prefix) for prefix in ignore_prefixes):
+            return True
+        context_after_stripped = context_after.lstrip()
+        if any(context_after_stripped.startswith(suffix) for suffix in ignore_suffixes):
+            return True
+        return False
 
     for match in re.finditer(r"(?<!ke-)\b([0-9]{1,2})\b", lowered):
-        start_idx = match.start()
-        context_before = lowered[max(0, start_idx - 10):start_idx]
-        if not any(context_before.endswith(prefix) for prefix in ignore_prefixes):
+        if not is_ignored(match.start(), match.end()):
             return int(match.group(1))
 
     for word, number in NUMBER_WORDS.items():
-        for match in re.finditer(rf"\b{word}\b", lowered):
-            start_idx = match.start()
-            context_before = lowered[max(0, start_idx - 10):start_idx]
-            if not any(context_before.endswith(prefix) for prefix in ignore_prefixes):
+        is_kanji = word in ("一", "二", "三", "四", "五", "六", "七", "八", "九", "十")
+        pattern = rf"{word}" if is_kanji else rf"\b{word}\b"
+        
+        for match in re.finditer(pattern, lowered):
+            if not is_kanji and word == "ke":
+                continue
+            if not is_ignored(match.start(), match.end()):
                 return number
 
     return None
