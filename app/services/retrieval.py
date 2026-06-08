@@ -131,8 +131,7 @@ def retrieve_context(
         )
 
     merged = dedupe_results([*expanded, *completeness_chunks])
-    final_limit = max(settings.retrieval_final_k, requested_count or 0)
-    final_results = repack_results(merged)[:final_limit]
+    final_results = repack_results(merged)
 
     return RetrievedContext(
         results=final_results,
