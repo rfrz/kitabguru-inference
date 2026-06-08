@@ -1,6 +1,6 @@
 from app.config import Settings
 from app.providers.embeddings import EmbeddingProfile
-from app.services.chroma_store import SearchResult
+from app.services.qdrant_store import SearchResult
 from app.services.retrieval import retrieve_context
 
 
@@ -23,7 +23,7 @@ class FakeEmbeddingProvider:
         return [[1.0] for _ in texts]
 
 
-class FakeChromaStore:
+class FakeQdrantStore:
     def __init__(self):
         self.chunks = {
             index: SearchResult(
@@ -70,7 +70,7 @@ def test_retrieve_context_expands_neighbors_and_completeness_headings():
         embedding_fingerprint="fp",
         settings=settings,
         embedding_provider=FakeEmbeddingProvider(),
-        chroma_store=FakeChromaStore(),
+        qdrant_store=FakeQdrantStore(),
     )
 
     assert retrieval.requested_count == 10

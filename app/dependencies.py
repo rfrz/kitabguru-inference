@@ -5,7 +5,7 @@ from fastapi import HTTPException, status
 from app.config import Settings, get_settings
 from app.providers.embeddings import ProviderConfigurationError, create_embedding_provider
 from app.providers.llm import LLMRouter
-from app.services.chroma_store import ChromaStore
+from app.services.qdrant_store import QdrantStore
 
 
 def get_embedding_provider():
@@ -19,12 +19,12 @@ def get_embedding_provider():
 
 
 @lru_cache
-def get_chroma_store_cached() -> ChromaStore:
-    return ChromaStore(get_settings())
+def get_qdrant_store_cached() -> QdrantStore:
+    return QdrantStore(get_settings())
 
 
-def get_chroma_store() -> ChromaStore:
-    return get_chroma_store_cached()
+def get_qdrant_store() -> QdrantStore:
+    return get_qdrant_store_cached()
 
 
 def get_llm_router() -> LLMRouter:

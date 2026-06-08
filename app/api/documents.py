@@ -11,11 +11,11 @@ from sqlmodel import Session, select
 
 from app.config import Settings
 from app.database import get_session
-from app.dependencies import get_app_settings, get_chroma_store, get_embedding_provider
+from app.dependencies import get_app_settings, get_qdrant_store, get_embedding_provider
 from app.models import Document
 from app.providers.embeddings import EmbeddingProfile, EmbeddingProvider, build_embedding_profile
 from app.schemas import DocumentImportResponse, DocumentRead, EmbeddingState
-from app.services.chroma_store import ChromaStore
+from app.services.qdrant_store import QdrantStore
 from app.services.epub_ingestion import Chunk, chunk_chapters, extract_epub
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -45,7 +45,7 @@ async def import_document(
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_app_settings),
     embedding_provider: EmbeddingProvider = Depends(get_embedding_provider),
-    chroma_store: ChromaStore = Depends(get_chroma_store),
+    qdrant_store: QdrantStore = Depends(get_qdrant_store),
 ) -> DocumentImportResponse:
     if not file.filename or not file.filename.lower().endswith(".epub"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only EPUB files are supported")
@@ -84,7 +84,7 @@ async def import_document(
             profile=profile,
             actual_dimension=actual_dimension,
         )
-        chroma_store.add_chunks(
+        qdrant_store.add_chunks(
             ids=ids,
             documents=texts,
             embeddings=embeddings,
@@ -107,7 +107,7 @@ async def import_document(
             session.refresh(document)
         except Exception:
             session.rollback()
-            chroma_store.delete_book(book_id)
+            qdrant_store.delete_book(book_id)
             raise
 
         return DocumentImportResponse(
@@ -133,13 +133,13 @@ async def import_document(
 def delete_document(
     book_id: str,
     session: Session = Depends(get_session),
-    chroma_store: ChromaStore = Depends(get_chroma_store),
+    qdrant_store: QdrantStore = Depends(get_qdrant_store),
 ) -> None:
     document = session.get(Document, book_id)
     if document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Document {book_id} not found")
 
-    chroma_store.delete_book(book_id)
+    qdrant_store.delete_book(book_id)
     session.delete(document)
     session.commit()
 

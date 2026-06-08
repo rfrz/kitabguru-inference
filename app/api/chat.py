@@ -8,13 +8,13 @@ from sqlmodel import Session, select
 
 from app.config import Settings
 from app.database import get_session
-from app.dependencies import get_app_settings, get_chroma_store, get_embedding_provider, get_llm_router
+from app.dependencies import get_app_settings, get_qdrant_store, get_embedding_provider, get_llm_router
 from app.models import Document
 from app.providers.embeddings import EmbeddingProvider, build_embedding_profile
 from app.providers.embeddings import EmbeddingProfile
 from app.providers.llm import AllLLMProvidersFailed, LLMRouter
 from app.schemas import ChatRequest, ChatResponse, Source
-from app.services.chroma_store import ChromaStore
+from app.services.qdrant_store import QdrantStore
 from app.services.retrieval import retrieve_context
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -43,7 +43,7 @@ def chat(
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_app_settings),
     embedding_provider: EmbeddingProvider = Depends(get_embedding_provider),
-    chroma_store: ChromaStore = Depends(get_chroma_store),
+    qdrant_store: QdrantStore = Depends(get_qdrant_store),
     llm_router: LLMRouter = Depends(get_llm_router),
 ) -> ChatResponse:
     current_profile = build_embedding_profile(settings)
@@ -55,7 +55,7 @@ def chat(
         embedding_fingerprint=current_profile.fingerprint,
         settings=settings,
         embedding_provider=embedding_provider,
-        chroma_store=chroma_store,
+        qdrant_store=qdrant_store,
     )
     results = retrieval.results
 

@@ -18,8 +18,9 @@ class Settings(BaseSettings):
     cors_origins: str = "*"
 
     database_url: str = "sqlite:///./data/app.db"
-    chroma_path: str = "./data/chroma"
-    chroma_collection: str = "epub_collection"
+    qdrant_location: str = "./data/qdrant"
+    qdrant_api_key: Optional[str] = None
+    qdrant_collection: str = "epub_collection"
     retrieval_top_k: int = 5
     retrieval_candidate_k: int = 30
     retrieval_final_k: int = 12
@@ -78,7 +79,8 @@ class Settings(BaseSettings):
         return ""
 
     def ensure_local_directories(self) -> None:
-        Path(self.chroma_path).mkdir(parents=True, exist_ok=True)
+        if not self.qdrant_location.startswith(("http://", "https://")):
+            Path(self.qdrant_location).mkdir(parents=True, exist_ok=True)
         if self.database_url.startswith("sqlite:///"):
             db_path = self.database_url.removeprefix("sqlite:///")
             if db_path and db_path != ":memory:":

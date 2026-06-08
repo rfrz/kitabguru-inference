@@ -6,12 +6,12 @@ from sqlmodel import Session, SQLModel, create_engine
 
 from app.config import Settings
 from app.database import get_session
-from app.dependencies import get_app_settings, get_chroma_store, get_embedding_provider, get_llm_router
+from app.dependencies import get_app_settings, get_qdrant_store, get_embedding_provider, get_llm_router
 from app.main import app
 from app.models import Document
 from app.providers.embeddings import EmbeddingProfile, build_embedding_profile
 from app.providers.llm import GenerationResult
-from app.services.chroma_store import SearchResult
+from app.services.qdrant_store import SearchResult
 
 
 class FakeEmbeddingProvider:
@@ -25,7 +25,7 @@ class FakeEmbeddingProvider:
         raise AssertionError("not used in this test")
 
 
-class FakeChromaStore:
+class FakeQdrantStore:
     def similarity_search(self, **kwargs):
         raise AssertionError("stale checks should happen before vector search")
 
@@ -46,7 +46,7 @@ class WorkingFakeEmbeddingProvider:
         return [[1.0] for _ in texts]
 
 
-class CompletenessFakeChromaStore:
+class CompletenessFakeQdrantStore:
     def __init__(self):
         arabic_headings = [
             "كف الأذى وبذل الندى",
@@ -150,7 +150,7 @@ def test_chat_endpoint_returns_409_for_stale_book_filter():
     app.dependency_overrides[get_session] = override_session
     app.dependency_overrides[get_app_settings] = lambda: settings
     app.dependency_overrides[get_embedding_provider] = lambda: FakeEmbeddingProvider(current)
-    app.dependency_overrides[get_chroma_store] = lambda: FakeChromaStore()
+    app.dependency_overrides[get_qdrant_store] = lambda: FakeQdrantStore()
     app.dependency_overrides[get_llm_router] = lambda: FakeLLMRouter()
     try:
         response = TestClient(app).post(
@@ -205,7 +205,7 @@ def test_chat_endpoint_uses_completeness_scan_for_numbered_list_question():
     app.dependency_overrides[get_session] = override_session
     app.dependency_overrides[get_app_settings] = lambda: settings
     app.dependency_overrides[get_embedding_provider] = lambda: WorkingFakeEmbeddingProvider(current)
-    app.dependency_overrides[get_chroma_store] = lambda: CompletenessFakeChromaStore()
+    app.dependency_overrides[get_qdrant_store] = lambda: CompletenessFakeQdrantStore()
     app.dependency_overrides[get_llm_router] = lambda: TenPointFakeLLMRouter()
     try:
         response = TestClient(app).post(

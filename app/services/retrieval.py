@@ -6,7 +6,7 @@ from typing import Any, Optional
 
 from app.config import Settings
 from app.providers.embeddings import EmbeddingProvider
-from app.services.chroma_store import ChromaStore, SearchResult
+from app.services.qdrant_store import QdrantStore, SearchResult
 
 
 RRF_RANK_CONSTANT = 60
@@ -69,23 +69,23 @@ def retrieve_context(
     embedding_fingerprint: str,
     settings: Settings,
     embedding_provider: EmbeddingProvider,
-    chroma_store: ChromaStore,
+    qdrant_store: QdrantStore,
 ) -> RetrievedContext:
     query_variants = build_query_variants(query)
-    where = build_chroma_filter(book_id=book_filter, embedding_fingerprint=embedding_fingerprint)
+    where = build_vector_filter(book_id=book_filter, embedding_fingerprint=embedding_fingerprint)
     candidates = _retrieve_candidates(
         query_variants=query_variants,
         where=where,
         settings=settings,
         embedding_provider=embedding_provider,
-        chroma_store=chroma_store,
+        qdrant_store=qdrant_store,
     )
 
     requested_count = extract_requested_count(query)
     selected = candidates[: settings.retrieval_final_k]
     expanded = expand_with_neighbors(
         selected,
-        chroma_store=chroma_store,
+        qdrant_store=qdrant_store,
         window=settings.retrieval_neighbor_window,
     )
 
@@ -96,7 +96,7 @@ def retrieve_context(
             book_filter=book_filter,
             embedding_fingerprint=embedding_fingerprint,
             seed_results=expanded or selected,
-            chroma_store=chroma_store,
+            qdrant_store=qdrant_store,
         )
 
     merged = dedupe_results([*expanded, *completeness_chunks])
@@ -118,14 +118,14 @@ def _retrieve_candidates(
     where: dict[str, Any],
     settings: Settings,
     embedding_provider: EmbeddingProvider,
-    chroma_store: ChromaStore,
+    qdrant_store: QdrantStore,
 ) -> list[SearchResult]:
     by_id: dict[str, SearchResult] = {}
     scores: dict[str, float] = {}
 
     for variant in query_variants:
         query_embedding = embedding_provider.embed_query(variant)
-        results = chroma_store.similarity_search(
+        results = qdrant_store.similarity_search(
             query_embedding=query_embedding,
             top_k=settings.retrieval_candidate_k,
             where=where,
@@ -175,7 +175,7 @@ def extract_requested_count(query: str) -> Optional[int]:
 def expand_with_neighbors(
     results: list[SearchResult],
     *,
-    chroma_store: ChromaStore,
+    qdrant_store: QdrantStore,
     window: int,
 ) -> list[SearchResult]:
     if window <= 0 or not results:
@@ -191,7 +191,7 @@ def expand_with_neighbors(
                 if neighbor_id and neighbor_id not in by_id:
                     neighbor_ids.append(neighbor_id)
 
-        fetched = chroma_store.get_by_ids(list(dict.fromkeys(neighbor_ids)))
+        fetched = qdrant_store.get_by_ids(list(dict.fromkeys(neighbor_ids)))
         frontier = []
         for result in fetched:
             if result.id not in by_id:
@@ -207,14 +207,14 @@ def find_completeness_chunks(
     book_filter: Optional[str],
     embedding_fingerprint: str,
     seed_results: list[SearchResult],
-    chroma_store: ChromaStore,
+    qdrant_store: QdrantStore,
 ) -> list[SearchResult]:
     book_ids = [book_filter] if book_filter else _seed_book_ids(seed_results)
     completeness: list[SearchResult] = []
 
     for book_id in book_ids:
-        where = build_chroma_filter(book_id=book_id, embedding_fingerprint=embedding_fingerprint)
-        chunks = chroma_store.get_chunks(where=where)
+        where = build_vector_filter(book_id=book_id, embedding_fingerprint=embedding_fingerprint)
+        chunks = qdrant_store.get_chunks(where=where)
         numbered = [
             chunk
             for chunk in chunks
@@ -245,7 +245,7 @@ def dedupe_results(results: list[SearchResult]) -> list[SearchResult]:
     return list(deduped.values())
 
 
-def build_chroma_filter(book_id: Optional[str], embedding_fingerprint: str) -> dict[str, Any]:
+def build_vector_filter(book_id: Optional[str], embedding_fingerprint: str) -> dict[str, Any]:
     filters: list[dict[str, Any]] = [{"embedding_fingerprint": embedding_fingerprint}]
     if book_id:
         filters.append({"book_id": book_id})
