@@ -193,14 +193,22 @@ def build_query_variants(query: str) -> list[str]:
 
 
 def extract_requested_count(query: str) -> Optional[int]:
-    match = re.search(r"\b([0-9]{1,2})\b", query)
-    if match:
-        return int(match.group(1))
-
     lowered = query.lower()
+    ignore_prefixes = ("ke-", "hadis ", "bab ", "ayat ", "pasal ", "halaman ", "surah ", "surat ", "nomor ", "no ")
+
+    for match in re.finditer(r"(?<!ke-)\b([0-9]{1,2})\b", lowered):
+        start_idx = match.start()
+        context_before = lowered[max(0, start_idx - 10):start_idx]
+        if not any(context_before.endswith(prefix) for prefix in ignore_prefixes):
+            return int(match.group(1))
+
     for word, number in NUMBER_WORDS.items():
-        if re.search(rf"\b{word}\b", lowered):
-            return number
+        for match in re.finditer(rf"\b{word}\b", lowered):
+            start_idx = match.start()
+            context_before = lowered[max(0, start_idx - 10):start_idx]
+            if not any(context_before.endswith(prefix) for prefix in ignore_prefixes):
+                return number
+
     return None
 
 
