@@ -7,7 +7,7 @@ import httpx
 import streamlit as st
 
 
-DEFAULT_API_BASE_URL = "http://127.0.0.1:8000"
+DEFAULT_API_BASE_URL = ""
 REQUEST_TIMEOUT = 30.0
 CHAT_TIMEOUT = 180.0
 IMPORT_TIMEOUT = 600.0
@@ -50,7 +50,7 @@ def request_json(
     **kwargs: Any,
 ) -> tuple[Any | None, str | None]:
     try:
-        response = httpx.request(method, api_url(base_url, path), timeout=timeout, **kwargs)
+        response = httpx.request(method, api_url(base_url, path), timeout=timeout, follow_redirects=True, **kwargs)
     except httpx.HTTPError as exc:
         return None, f"Tidak bisa menghubungi backend: {exc}"
 
@@ -65,8 +65,8 @@ def request_json(
     return None, f"{response.status_code} {response.reason_phrase}: {response_detail(response)}"
 
 
-def fetch_documents(base_url: str) -> tuple[list[dict[str, Any]], str | None]:
-    payload, error = request_json("GET", base_url, "/api/documents")
+def fetch_documents(base_url: str, headers: dict[str, str] | None = None) -> tuple[list[dict[str, Any]], str | None]:
+    payload, error = request_json("GET", base_url, "/api/documents", headers=headers)
     if error:
         return [], error
     return payload or [], None
@@ -103,8 +103,8 @@ def show_source(source: dict[str, Any], index: int) -> None:
             st.json(metadata)
 
 
-def render_health(base_url: str) -> None:
-    payload, error = request_json("GET", base_url, "/health", timeout=5.0)
+def render_health(base_url: str, headers: dict[str, str] | None = None) -> None:
+    payload, error = request_json("GET", base_url, "/health", timeout=5.0, headers=headers)
     if error:
         st.error(error)
         return
@@ -115,7 +115,7 @@ def render_health(base_url: str) -> None:
         st.warning("Backend merespons, tapi status health tidak dikenali.")
 
 
-def render_document_manager(base_url: str, documents: list[dict[str, Any]]) -> None:
+def render_document_manager(base_url: str, documents: list[dict[str, Any]], headers: dict[str, str] | None = None) -> None:
     st.subheader("Import EPUB")
     with st.form("import_document_form", clear_on_submit=True):
         uploaded_file = st.file_uploader("File EPUB", type=["epub"], accept_multiple_files=False)
@@ -147,6 +147,7 @@ def render_document_manager(base_url: str, documents: list[dict[str, Any]]) -> N
                     data=data,
                     files=files,
                     timeout=IMPORT_TIMEOUT,
+                    headers=headers,
                 )
             if error:
                 st.error(error)
@@ -179,6 +180,7 @@ def render_document_manager(base_url: str, documents: list[dict[str, Any]]) -> N
                             "DELETE",
                             base_url,
                             f"/api/documents/{document.get('book_id')}",
+                            headers=headers,
                         )
                     if error:
                         st.error(error)
@@ -187,7 +189,7 @@ def render_document_manager(base_url: str, documents: list[dict[str, Any]]) -> N
                         st.rerun()
 
 
-def render_chat(base_url: str, documents: list[dict[str, Any]]) -> None:
+def render_chat(base_url: str, documents: list[dict[str, Any]], headers: dict[str, str] | None = None) -> None:
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
@@ -226,6 +228,7 @@ def render_chat(base_url: str, documents: list[dict[str, Any]]) -> None:
                 "/api/chat",
                 json=request_payload,
                 timeout=CHAT_TIMEOUT,
+                headers=headers,
             )
         if error:
             st.error(error)
@@ -257,21 +260,27 @@ def main() -> None:
     with st.sidebar:
         st.header("Backend")
         base_url = st.text_input("API Base URL", value=DEFAULT_API_BASE_URL)
+        auth_token = st.text_input("Auth Token (Bearer)", value="", type="password", help="Opsional, untuk private endpoint (misal HF Spaces)")
         normalized_base_url = normalize_base_url(base_url)
-        render_health(normalized_base_url)
+        
+        headers = {}
+        if auth_token.strip():
+            headers["Authorization"] = f"Bearer {auth_token.strip()}"
+            
+        render_health(normalized_base_url, headers)
         if st.button("Clear chat", use_container_width=True):
             st.session_state.messages = []
             st.rerun()
 
-    documents, documents_error = fetch_documents(normalized_base_url)
+    documents, documents_error = fetch_documents(normalized_base_url, headers)
     if documents_error:
         st.warning(f"Gagal mengambil daftar dokumen: {documents_error}")
 
     chat_tab, documents_tab = st.tabs(["Chat", "Dokumen"])
     with chat_tab:
-        render_chat(normalized_base_url, documents)
+        render_chat(normalized_base_url, documents, headers)
     with documents_tab:
-        render_document_manager(normalized_base_url, documents)
+        render_document_manager(normalized_base_url, documents, headers)
 
 
 if __name__ == "__main__":
