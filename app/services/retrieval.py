@@ -44,12 +44,12 @@ ARABIC_QUERY_HINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
-BOOK_ROUTING_PROMPT_TEMPLATE = """Kamu adalah evaluator RAG.
-Berikut adalah cuplikan konteks dari beberapa buku hasil pencarian awal.
-Tentukan buku mana (book_id) yang paling relevan dan berpotensi menjawab pertanyaan berikut.
-Boleh memilih lebih dari satu buku jika memang relevan.
+CHUNK_EVALUATION_PROMPT_TEMPLATE = """Kamu adalah evaluator sistem RAG.
+Berikut adalah cuplikan teks konteks (chunk) dari hasil pencarian.
+Tentukan daftar `chunk_id` yang BENAR-BENAR 100% USELESS dan TIDAK ADA KAITANNYA SAMA SEKALI dengan pertanyaan.
+PENTING: Jika ada teks yang memiliki sedikit saja kaitan atau relevansi dengan pertanyaan, JANGAN masukkan ke daftar useless.
 Jawab HANYA dengan JSON valid.
-Format: {{"relevant_book_ids": ["book_id_1", "book_id_2"]}}
+Format: {{"useless_chunk_ids": ["chunk_id_1", "chunk_id_2"]}}
 
 Konteks:
 {context}
@@ -98,19 +98,19 @@ def retrieve_context(
         qdrant_store=qdrant_store,
     )
 
-    if evaluator_llm_router and not book_filter:
-        unique_book_ids = list(dict.fromkeys(str(c.metadata.get("book_id", "")) for c in candidates if c.metadata.get("book_id")))
-        if len(unique_book_ids) > 1:
-            from app.api.chat import _format_sources_for_prompt
-            context = _format_sources_for_prompt(candidates)
-            prompt = BOOK_ROUTING_PROMPT_TEMPLATE.format(context=context, query=query)
-            try:
-                eval_result = evaluator_llm_router.generate_json(prompt)
-                relevant_book_ids = eval_result.get("relevant_book_ids", [])
-                if relevant_book_ids and isinstance(relevant_book_ids, list):
-                    candidates = [c for c in candidates if str(c.metadata.get("book_id", "")) in relevant_book_ids]
-            except Exception:
-                pass
+    rejected_chunk_ids: set[str] = set()
+    if evaluator_llm_router:
+        from app.api.chat import _format_sources_for_prompt
+        context = _format_sources_for_prompt(candidates)
+        prompt = CHUNK_EVALUATION_PROMPT_TEMPLATE.format(context=context, query=query)
+        try:
+            eval_result = evaluator_llm_router.generate_json(prompt)
+            useless_ids = eval_result.get("useless_chunk_ids", [])
+            if useless_ids and isinstance(useless_ids, list):
+                rejected_chunk_ids = set(str(uid) for uid in useless_ids)
+                candidates = [c for c in candidates if str(c.id) not in rejected_chunk_ids]
+        except Exception:
+            pass
 
     requested_count = extract_requested_count(query)
     selected = candidates[: settings.retrieval_final_k]
@@ -118,6 +118,7 @@ def retrieve_context(
         selected,
         qdrant_store=qdrant_store,
         window=settings.retrieval_neighbor_window,
+        rejected_ids=rejected_chunk_ids,
     )
 
     completeness_chunks: list[SearchResult] = []
@@ -128,6 +129,7 @@ def retrieve_context(
             embedding_fingerprint=embedding_fingerprint,
             seed_results=expanded or selected,
             qdrant_store=qdrant_store,
+            rejected_ids=rejected_chunk_ids,
         )
 
     merged = dedupe_results([*expanded, *completeness_chunks])
@@ -207,6 +209,7 @@ def expand_with_neighbors(
     *,
     qdrant_store: QdrantStore,
     window: int,
+    rejected_ids: set[str] = frozenset(),
 ) -> list[SearchResult]:
     if window <= 0 or not results:
         return dedupe_results(results)
@@ -218,13 +221,13 @@ def expand_with_neighbors(
         for result in frontier:
             for key in ("prev_id", "next_id"):
                 neighbor_id = str(result.metadata.get(key) or "")
-                if neighbor_id and neighbor_id not in by_id:
+                if neighbor_id and neighbor_id not in by_id and neighbor_id not in rejected_ids:
                     neighbor_ids.append(neighbor_id)
 
         fetched = qdrant_store.get_by_ids(list(dict.fromkeys(neighbor_ids)))
         frontier = []
         for result in fetched:
-            if result.id not in by_id:
+            if result.id not in by_id and str(result.id) not in rejected_ids:
                 by_id[result.id] = result
                 frontier.append(result)
 
@@ -238,6 +241,7 @@ def find_completeness_chunks(
     embedding_fingerprint: str,
     seed_results: list[SearchResult],
     qdrant_store: QdrantStore,
+    rejected_ids: set[str] = frozenset(),
 ) -> list[SearchResult]:
     book_ids = [book_filter] if book_filter else _seed_book_ids(seed_results)
     completeness: list[SearchResult] = []
@@ -248,7 +252,7 @@ def find_completeness_chunks(
         numbered = [
             chunk
             for chunk in chunks
-            if _heading_number(chunk) is not None and 1 <= _heading_number(chunk) <= requested_count
+            if _heading_number(chunk) is not None and 1 <= _heading_number(chunk) <= requested_count and str(chunk.id) not in rejected_ids
         ]
         found_numbers = {_heading_number(chunk) for chunk in numbered}
         if len(found_numbers) >= min(requested_count, len(numbered)):

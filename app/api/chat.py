@@ -216,6 +216,7 @@ def _format_sources_for_prompt(results) -> str:
             "\n".join(
                 [
                     f"[S{index}]",
+                    f"chunk_id: {result.id}",
                     f"book_id: {metadata.get('book_id', '-')}",
                     f"title: {metadata.get('title', '-')}",
                     f"chapter: {metadata.get('chapter', '-')}",
