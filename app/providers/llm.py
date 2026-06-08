@@ -31,6 +31,7 @@ class AllLLMProvidersFailed(RuntimeError):
 
 class LLMProvider(Protocol):
     name: str
+    model: str
 
     def generate(self, prompt: str) -> str:
         ...
@@ -124,7 +125,7 @@ class LLMRouter:
                 answer = provider.generate(prompt)
                 if not answer.strip():
                     raise RuntimeError("Provider returned an empty response")
-                return GenerationResult(answer=answer, provider_used=provider.name)
+                return GenerationResult(answer=answer, provider_used=provider.model)
             except Exception as exc:
                 failure = ProviderFailure(provider=provider.name, error=str(exc))
                 failures.append(failure)
