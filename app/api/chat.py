@@ -20,7 +20,7 @@ from app.services.retrieval import retrieve_context, expand_with_neighbors, dedu
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 PROMPT_TEMPLATE = """Kamu adalah asisten AI untuk tanya jawab kitab.
-PENTING: Jawablah menggunakan bahasa yang sama dengan bahasa yang digunakan pada bagian Pertanyaan.
+CRITICAL INSTRUCTION: You MUST reply in the EXACT SAME LANGUAGE as the user's query below. If the user's query is in English, reply in English. If Japanese, reply in Japanese. If Arabic, reply in Arabic. This is mandatory.
 Jawab hanya berdasarkan konteks dokumen berikut.
 
 Konteks:
