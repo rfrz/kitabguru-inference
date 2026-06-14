@@ -9,7 +9,7 @@ app_port: 7860
 
 # KitabGuru Inference Engine
 
-FastAPI backend for a cross-lingual RAG workflow: Arabic EPUB content is embedded into ChromaDB, while Indonesian queries are answered through a fallback LLM router.
+FastAPI backend for a cross-lingual RAG workflow: Arabic EPUB content is embedded into Qdrant, while Indonesian queries are answered through a fallback LLM router.
 
 ## Setup
 
@@ -58,7 +58,7 @@ Open `http://127.0.0.1:8501` to upload EPUB files, manage imported documents, an
   - **Response**: JSON Array of document metadata.
 
 - `DELETE /api/documents/{book_id}`
-  - Removes SQLite metadata and Chroma vectors for a book.
+  - Removes SQLite metadata and Qdrant vectors for a book.
   - **Response**: HTTP 204 No Content.
 
 - `POST /api/chat`
