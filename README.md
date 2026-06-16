@@ -92,3 +92,14 @@ Every book and vector chunk stores:
 If `.env` changes to a different embedding provider/model/dimension, `POST /api/chat` returns `409 Conflict` for stale documents. Delete and re-import the EPUB to re-embed it with the current model.
 
 Set `EMBEDDING_DIMENSION` when using a model whose output dimension is not listed in the built-in defaults. This keeps the fingerprint strict and predictable.
+
+## Deployment to Hugging Face Spaces
+
+This application is pre-configured to run on Hugging Face Spaces using the Docker SDK, as indicated by the YAML frontmatter at the top of this file (`sdk: docker`, `app_port: 7860`).
+
+To deploy:
+1. Create a new Space on Hugging Face and select **Docker** as the Blank template.
+2. Push this repository directory to the Space.
+3. Go to the Space's settings (Settings > Variables and secrets).
+4. Add all required environment variables (e.g., `QDRANT_URL`, `QDRANT_API_KEY`, and LLM API Keys like `OPENAI_API_KEY`, `GROQ_API_KEY`, `GEMINI_API_KEY`) as **Secrets**.
+5. Hugging Face will automatically build the Docker image using the `Dockerfile` in this directory and expose the app on port `7860`.
