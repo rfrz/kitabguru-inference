@@ -1,30 +1,55 @@
+# Bagian deklarasi metadata umum proyek mesin inferensi
 [project]
+# Nama paket aplikasi inferensi RAG
 name = "kitabguru-inference"
+# Versi rilis aplikasi saat ini
 version = "0.1.0"
+# Deskripsi fungsional mesin pencarian RAG antar-bahasa Arab-Indonesia
 description = "Cross-lingual RAG inference engine for Arabic EPUB knowledge bases and Indonesian answers."
+# File dokumentasi utama proyek
 readme = "README.md"
+# Versi minimal interpreter Python yang dibutuhkan
 requires-python = ">=3.10"
+# Daftar paket pustaka (dependencies) wajib untuk menjalankan mesin inferensi
 dependencies = [
+    # Pemrosesan file HTML/XML (digunakan mengekstrak teks EPUB)
     "beautifulsoup4>=4.12.3",
+    # Pustaka pembaca file format EPUB
     "ebooklib>=0.18",
+    # Framework web utama untuk performa asinkron tinggi
     "fastapi>=0.115.0",
+    # Client resmi untuk berinteraksi dengan database vektor Qdrant
     "qdrant-client>=1.9.0",
+    # SDK resmi Google GenAI untuk mengakses model Gemini
     "google-genai>=1.0.0",
+    # SDK resmi Groq untuk pemrosesan teks/LLM super cepat
     "groq>=0.9.0",
+    # Client Hub Hugging Face untuk memanggil model embedding eksternal
     "huggingface-hub>=0.23.0",
+    # SDK resmi OpenAI untuk memanggil provider LLM alternatif
     "openai>=1.40.0",
+    # Pustaka pengelola konfigurasi menggunakan file .env
     "pydantic-settings>=2.4.0",
+    # Mendukung pemrosesan request berformat form-data (seperti upload file EPUB)
     "python-multipart>=0.0.9",
+    # ORM gabungan SQLAlchemy dan Pydantic untuk SQL database
     "sqlmodel>=0.0.22",
+    # Server web ASGI untuk menjalankan FastAPI
     "uvicorn[standard]>=0.30.0",
 ]
 
+# Paket dependensi opsional untuk pengembangan (development)
 [project.optional-dependencies]
 dev = [
+    # Klien HTTP untuk simulasi request di unit test
     "httpx>=0.27.0",
+    # Framework unit testing utama
     "pytest>=8.0.0",
 ]
 
+# Konfigurasi perkakas pytest untuk pengujian otomatis
 [tool.pytest.ini_options]
+# Menentukan folder tempat pencarian file test berada
 testpaths = ["tests"]
+# Menambahkan folder root proyek ke sys.path saat testing berjalan
 pythonpath = ["."]
