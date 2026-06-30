@@ -37,15 +37,9 @@ class Settings(BaseSettings):
     # Nama koleksi (tabel vektor) utama di Qdrant
     qdrant_collection: str = "epub_collection"
     # Jumlah kandidat fragmen teks awal (k) yang diambil oleh pencarian vektor (retrieval)
-    retrieval_candidate_k: int = 30
-    # Jumlah fragmen teks final (k) teratas yang akan dikirim ke LLM sebagai konteks RAG
-    retrieval_final_k: int = 12
+    retrieval_candidate_k: int = 10
     # Jumlah fragmen teks tetangga (sibling chunk) kiri-kanan yang ikut diambil untuk memperkaya konteks RAG
     retrieval_neighbor_window: int = 1
-    # Mengaktifkan evaluasi otomatis kelengkapan jawaban AI oleh model evaluator RAG
-    rag_enable_completeness_scan: bool = True
-    # Batas maksimal pengulangan evaluasi RAG jika jawaban dinilai belum lengkap oleh evaluator
-    rag_max_eval_retries: int = 3
     # Ukuran kapasitas jumlah karakter per potongan teks buku saat di-ingest (chunk size)
     chunk_size: int = 1200
     # Ukuran tumpang-tindih karakter antar potongan teks agar tidak kehilangan makna (overlap)

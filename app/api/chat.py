@@ -29,8 +29,8 @@ from app.providers.llm import AllLLMProvidersFailed, LLMRouter
 from app.schemas import ChatRequest, ChatResponse, Source
 # Mengimpor modul penyimpanan pencarian vektor Qdrant
 from app.services.qdrant_store import QdrantStore
-# Mengimpor fungsi pembantu pencarian RAG, ekspansi tetangga (windowing), dan pembersihan duplikat chunk
-from app.services.retrieval import retrieve_context, expand_with_neighbors, dedupe_results
+# Mengimpor fungsi pembantu pencarian RAG
+from app.services.retrieval import retrieve_context
 
 # Inisialisasi router FastAPI untuk rute '/chat' di bawah tag dokumentasi 'chat'
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -54,20 +54,6 @@ Aturan jawaban:
 - Jangan menambahkan poin dari pengetahuan umum atau hafalan di luar konteks.
 """
 
-# Template teks prompt untuk model evaluator guna memeriksa kelengkapan jumlah poin jawaban
-EVAL_PROMPT_TEMPLATE = """Kamu adalah evaluator sistem RAG.
-Baca konteks berikut dan tentukan apakah konteks tersebut sudah memuat cukup poin untuk menjawab pertanyaan.
-Jawab HANYA dengan objek JSON valid, tanpa markdown tambahan.
-Format wajib: {{"is_complete": boolean, "found_count": integer}}
-
-Konteks:
-{context}
-
-Pertanyaan (butuh {requested_count} poin):
-{query}
-"""
-
-
 # Rute POST '/chat' untuk melayani pencarian RAG dan tanya jawab buku
 @router.post("", response_model=ChatResponse)
 # Fungsi asinkron/sinkron untuk melayani request chat RAG
@@ -84,7 +70,7 @@ def chat(
     qdrant_store: QdrantStore = Depends(get_qdrant_store),
     # Mengambil router LLM utama untuk penjawab
     llm_router: LLMRouter = Depends(get_llm_router),
-    # Mengambil router LLM evaluator untuk memeriksa kecukupan informasi
+    # Mengambil router LLM evaluator untuk memeriksa kecukupan informasi (sekarang diteruskan ke retrieval)
     evaluator_llm_router: LLMRouter = Depends(get_evaluator_llm_router),
 ) -> ChatResponse:
     # Membangun profil model embedding yang sedang aktif berdasarkan konfigurasi saat ini
@@ -92,7 +78,7 @@ def chat(
     # Memastikan dokumen yang di-query memiliki sidik jari embedding yang cocok (tidak kedaluwarsa)
     _raise_if_stale_embeddings(session, request.book_filter, current_profile)
 
-    # Mengeksekusi pencarian vektor awal ke Qdrant dan mendeteksi apakah pertanyaan meminta daftar poin tertentu
+    # Mengeksekusi pencarian vektor awal ke Qdrant, termasuk ekspansi neighbor yang sudah memanggil evaluator LLM di dalamnya
     retrieval = retrieve_context(
         # Pertanyaan pengguna
         query=request.query,
@@ -109,52 +95,8 @@ def chat(
         # Router LLM evaluator
         evaluator_llm_router=evaluator_llm_router,
     )
-    # Menyimpan daftar hasil chunk pencarian awal
+    # Menyimpan daftar hasil chunk pencarian akhir
     results = retrieval.results
-
-    # Evaluasi Mandiri (Self-Correction Loop RAG): Jika pertanyaan terdeteksi meminta poin berjumlah tertentu
-    if retrieval.requested_count and retrieval.requested_count > 0:
-        # Melakukan iterasi berulang hingga batas maksimal retry evaluasi yang ditentukan di settings
-        for _ in range(settings.rag_max_eval_retries):
-            # Jika tidak ada chunk hasil pencarian yang ditemukan, hentikan loop
-            if not results:
-                break
-            
-            # Memformat chunk hasil pencarian saat ini menjadi teks konteks [S1], [S2]...
-            context = _format_sources_for_prompt(results)
-            # Menyusun prompt evaluasi kelayakan informasi
-            eval_prompt = EVAL_PROMPT_TEMPLATE.format(
-                context=context,
-                requested_count=retrieval.requested_count,
-                query=request.query
-            )
-            
-            # Meminta model evaluator memberikan penilaian kelengkapan dalam bentuk JSON
-            try:
-                eval_result = evaluator_llm_router.generate_json(eval_prompt)
-            # Jika panggilan model evaluator gagal, segera hentikan loop evaluasi mandiri
-            except Exception:
-                break
-            
-            # Mengambil nilai boolean apakah informasi sudah lengkap dari respons JSON
-            is_complete = eval_result.get("is_complete", False)
-            # Mengambil jumlah poin informasi yang berhasil ditemukan dari dokumen saat ini
-            found_count = eval_result.get("found_count", 0)
-            
-            # Jika informasi dinilai lengkap atau jumlah poin yang ditemukan memenuhi syarat yang diminta
-            if is_complete or found_count >= retrieval.requested_count:
-                # Segera keluar dari loop karena informasi dinilai sudah memadai
-                break
-                
-            # Ekspansi Konteks (Context Expansion): Jika informasi belum lengkap, ambil chunk tetangga (sebelum/sesudah) dari Qdrant
-            new_results = expand_with_neighbors(results, qdrant_store=qdrant_store, window=settings.retrieval_neighbor_window)
-            # Menggabungkan hasil lama dengan chunk tetangga baru dan membuang yang terduplikasi
-            merged = dedupe_results(results + new_results)
-            # Jika setelah digabung jumlah dokumen tidak bertambah, hentikan loop untuk mencegah perulangan tak berujung
-            if len(merged) <= len(results):
-                break
-            # Perbarui variabel results dengan hasil ekspansi terbaru untuk dinilai kembali pada iterasi berikutnya
-            results = merged
 
     # Memetakan hasil akhir chunk pencarian menjadi objek Source untuk respons API
     sources = [
@@ -203,14 +145,11 @@ def chat(
     answer_status = _answer_status(
         answer=generation.answer,
         citations=citations,
-        valid_citation_marker_count=_count_valid_citation_markers(generation.answer, source_count=len(results)),
-        requested_count=retrieval.requested_count,
     )
     # Menambahkan catatan kalimat penjelas di depan jawaban jika statusnya dinilai parsial
     answer = _ensure_partial_notice(
         generation.answer,
         answer_status=answer_status,
-        requested_count=retrieval.requested_count,
     )
 
     # Mengembalikan objek ChatResponse final
@@ -357,10 +296,6 @@ def _answer_status(
     answer: str,
     # Daftar kode sitasi unik yang valid
     citations: list[str],
-    # Jumlah total tanda penanda sitasi di teks jawaban
-    valid_citation_marker_count: int,
-    # Jumlah poin informasi yang diminta oleh pertanyaan (jika ada)
-    requested_count: Optional[int],
 ) -> str:
     # Mengubah teks jawaban ke huruf kecil semua agar pencocokan teks konsisten
     lowered = answer.lower()
@@ -369,59 +304,16 @@ def _answer_status(
         # Klasifikasikan jawaban sebagai tidak mencukupi (insufficient)
         return "insufficient"
 
-    # Jika pertanyaan meminta daftar dengan jumlah poin tertentu
-    if requested_count:
-        # Menghitung jumlah poin bullet-points yang berhasil ditulis di dalam teks jawaban
-        listed_points = _count_listed_points(answer)
-        # Jika jumlah poin yang ditulis memenuhi syarat dan jumlah tanda sitasi valid juga memenuhi syarat
-        if listed_points >= requested_count and valid_citation_marker_count >= requested_count:
-            # Klasifikasikan jawaban sebagai lengkap (complete)
-            return "complete"
-        # Jika minimal ada rujukan sitasi atau ada poin yang sempat ditulis
-        if citations or listed_points:
-            # Klasifikasikan jawaban sebagai parsial (terjawab sebagian)
-            return "partial"
-        # Jika tidak ada sitasi dan tidak ada poin yang berhasil ditulis
-        return "insufficient"
-
-    # Jika tidak meminta poin spesifik, kembalikan 'complete' jika ada sitasi, atau 'partial' jika tidak ada sitasi
+    # Kembalikan 'complete' jika ada sitasi, atau 'partial' jika tidak ada sitasi
     return "complete" if citations else "partial"
 
 
-# Menghitung jumlah baris poin daftar (bullet list) seperti "1. ", "2) ", "- ", atau "* " di dalam teks jawaban
-def _count_listed_points(answer: str) -> int:
-    # Menggunakan regex mode multiline untuk mencocokkan format bullet point di awal baris baru
-    return len(re.findall(r"(?m)^\s*(?:[0-9]{1,2}[\).]|[-*])\s+", answer))
-
-
-# Menghitung jumlah penanda sitasi valid yang ditulis di dalam teks jawaban (memperbolehkan rujukan berulang)
-def _count_valid_citation_markers(answer: str, *, source_count: int) -> int:
-    # Inisialisasi hitungan
-    count = 0
-    # Mencari seluruh tanda sitasi angka di teks jawaban
-    for raw in re.findall(r"\[S([0-9]+)\]", answer):
-        # Konversi ke integer
-        index = int(raw)
-        # Jika indeks sitasi valid (ada di dalam daftar sumber)
-        if 1 <= index <= source_count:
-            # Tambahkan hitungan
-            count += 1
-    # Mengembalikan total jumlah tanda sitasi
-    return count
-
-
 # Memastikan jawaban asisten diawali dengan teks informasi parsial jika status jawabannya adalah parsial
-def _ensure_partial_notice(answer: str, *, answer_status: str, requested_count: Optional[int]) -> str:
+def _ensure_partial_notice(answer: str, *, answer_status: str) -> str:
     # Jika status jawaban bukan parsial atau di dalam teks jawaban sudah memuat penjelasan parsial
     if answer_status != "partial" or "parsial" in answer.lower():
         # Kembalikan teks jawaban apa adanya
         return answer
-    # Jika ada permintaan jumlah poin spesifik
-    if requested_count:
-        # Sisipkan kalimat penjelas parsial yang merinci target requested_count di depan teks jawaban asli
-        return (
-            "Jawaban parsial: konteks yang ditemukan belum cukup untuk memverifikasi "
-            f"seluruh {requested_count} poin yang diminta.\n\n{answer}"
-        )
+
     # Sisipkan kalimat penjelas parsial umum di depan teks jawaban asli
     return f"Jawaban parsial berdasarkan konteks yang ditemukan.\n\n{answer}"
