@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     gemini_api_key: Optional[str] = None
     # Nama model embedding dari Google Gemini
     gemini_embedding_model: str = "text-embedding-004"
+    # Nama model embedding lokal via FastEmbed
+    local_embedding_model: str = "intfloat/multilingual-e5-large"
 
     # ─── Pengaturan Model Bahasa (LLM Inference Fallback) ─────────────────
     # Urutan fallback provider LLM utama (jika provider pertama gagal, coba provider berikutnya)
@@ -149,6 +151,9 @@ class Settings(BaseSettings):
         # Jika menggunakan Google Gemini
         if provider == "gemini":
             return self.gemini_embedding_model
+        # Jika menggunakan model lokal
+        if provider == "local":
+            return self.local_embedding_model
         # Kosong jika tidak dikenali
         return ""
 

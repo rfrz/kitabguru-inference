@@ -28,6 +28,8 @@ dependencies = [
     "huggingface-hub>=0.23.0",
     # SDK resmi OpenAI untuk memanggil provider LLM alternatif
     "openai>=1.40.0",
+    # Pustaka FastEmbed untuk mengeksekusi model embedding ringan secara lokal
+    "fastembed>=0.2.7",
     # Pustaka pengelola konfigurasi menggunakan file .env
     "pydantic-settings>=2.4.0",
     # Mendukung pemrosesan request berformat form-data (seperti upload file EPUB)

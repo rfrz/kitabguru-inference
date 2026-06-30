@@ -102,6 +102,9 @@ def embedding_behavior(provider: str, model: str) -> str:
     if provider == "gemini":
         # Terapkan format pencarian semantik similarity bawaan Gemini
         return "gemini-semantic-similarity"
+    # Jika menggunakan provider lokal dengan model e5
+    if provider == "local" and is_e5_model(model):
+        return "e5-query-passage-prefix"
     # Selain dari itu, gunakan perilaku default normal
     return "default"
 
@@ -126,8 +129,8 @@ def build_embedding_profile(settings: Settings) -> EmbeddingProfile:
     provider = settings.normalized_embedding_provider
     # Mengambil model aktif
     model = settings.active_embedding_model
-    # Memvalidasi provider yang didukung (hanya huggingface dan gemini)
-    if provider not in {"huggingface", "gemini"}:
+    # Memvalidasi provider yang didukung
+    if provider not in {"huggingface", "gemini", "local"}:
         raise ProviderConfigurationError(f"Unsupported embedding provider: {provider}")
     # Memastikan nama model telah diisi
     if not model:
@@ -151,6 +154,9 @@ def create_embedding_provider(settings: Settings) -> EmbeddingProvider:
     # Jika setelannya gemini, buat instans GeminiEmbeddingProvider
     if provider == "gemini":
         return GeminiEmbeddingProvider(settings)
+    # Jika setelannya lokal, buat instans LocalEmbeddingProvider
+    if provider == "local":
+        return LocalEmbeddingProvider(settings)
     # Lempar error jika tidak ada provider yang cocok
     raise ProviderConfigurationError(f"Unsupported embedding provider: {provider}")
 
@@ -311,3 +317,43 @@ class GeminiEmbeddingProvider:
         )
         # Memaksa list hasil embedding menjadi daftar vektor float dua dimensi
         return coerce_vectors([embedding.values for embedding in result.embeddings])
+
+
+# Kelas implementasi provider embedding yang berjalan secara lokal dengan fastembed
+class LocalEmbeddingProvider:
+    # Inisialisasi provider lokal
+    def __init__(self, settings: Settings):
+        # Menyimpan model embedding yang digunakan
+        self.model = settings.local_embedding_model
+        # Membuat profil konfigurasi model
+        self._profile = build_embedding_profile(settings)
+        try:
+            # Mengimpor fastembed
+            from fastembed import TextEmbedding
+        except ImportError as exc:
+            raise ProviderConfigurationError("Install fastembed to use local embeddings") from exc
+
+        # Inisialisasi model lokal (akan otomatis mengunduh jika belum ada)
+        self.client = TextEmbedding(model_name=self.model)
+
+    # Membaca profil model embedding
+    @property
+    def profile(self) -> EmbeddingProfile:
+        return self._profile
+
+    # Mengonversi teks query pertanyaan menjadi vektor dengan menyisipkan awalan e5 query (jika e5)
+    def embed_query(self, text: str) -> list[float]:
+        processed_text = prefixed_for_e5(self.model, text, is_query=True)
+        # fastembed.embed mengembalikan generator, kita ambil yang pertama
+        result_generator = self.client.embed([processed_text])
+        return coerce_vector(next(result_generator))
+
+    # Mengonversi daftar dokumen buku menjadi daftar vektor
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        processed_texts = [
+            prefixed_for_e5(self.model, text, is_query=False)
+            for text in texts
+        ]
+        # fastembed.embed mengembalikan generator berisikan array numpy
+        result_generator = self.client.embed(processed_texts)
+        return coerce_vectors(list(result_generator))
