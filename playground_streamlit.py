@@ -359,7 +359,7 @@ def render_document_manager(base_url: str, documents: list[dict[str, Any]], head
                     delete_key = f"delete_{document.get('book_id')}"
                     # Menampilkan tombol Delete berwarna merah jika diklik
                     if st.button("Delete", key=delete_key, use_container_width=True):
-                    # Menampilkan spinner animasi loading hapus
+                        # Menampilkan spinner animasi loading hapus
                         with st.spinner("Menghapus dokumen..."):
                             # Mengirim request DELETE ke API backend
                             _, error = request_json(
@@ -368,14 +368,14 @@ def render_document_manager(base_url: str, documents: list[dict[str, Any]], head
                                 f"/api/documents/{document.get('book_id')}",
                                 headers=headers,
                             )
-                    # Jika gagal menghapus
-                    if error:
-                        st.error(error)
-                    # Jika sukses
-                    else:
-                        st.success("Dokumen dihapus.")
-                        # Memuat ulang antarmuka
-                        st.rerun()
+                        # Jika gagal menghapus
+                        if error:
+                            st.error(error)
+                        # Jika sukses
+                        else:
+                            st.success("Dokumen dihapus.")
+                            # Memuat ulang antarmuka
+                            st.rerun()
 
 
 # Merender antarmuka obrolan tanya jawab RAG (Chat UI)

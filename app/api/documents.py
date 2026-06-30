@@ -26,7 +26,7 @@ from app.dependencies import get_app_settings, get_qdrant_store, get_embedding_p
 # Mengimpor model tabel Document dan DocumentTask database
 from app.models import Document, DocumentTask
 # Mengimpor profil embedding, provider embedding, dan fungsi pembangun profil model aktif
-from app.providers.embeddings import EmbeddingProfile, EmbeddingProvider, build_embedding_profile
+from app.providers.embeddings import EmbeddingProfile, EmbeddingProvider, build_embedding_profile, create_embedding_provider
 # Mengimpor skema data untuk respons import dokumen, detail dokumen, status model embedding, dll
 from app.schemas import (
     DocumentImportResponse,
@@ -98,6 +98,7 @@ async def import_document(
     author: str | None = Form(default=None),
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_app_settings),
+    qdrant_store: QdrantStore = Depends(get_qdrant_store),
 ) -> DocumentImportResponse:
     if not file.filename or not file.filename.lower().endswith(".epub"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only EPUB files are supported")
@@ -124,6 +125,7 @@ async def import_document(
         title=title,
         author=author,
         settings=settings,
+        qdrant_store=qdrant_store,
     )
 
     return DocumentImportResponse(task_id=task_id, status="PENDING")
@@ -260,6 +262,7 @@ def _process_epub_task(
     title: str | None,
     author: str | None,
     settings: Settings,
+    qdrant_store: QdrantStore,
 ) -> None:
     # Membuka sesi koneksi database sendiri karena ini background task
     with Session(engine) as session:
@@ -275,9 +278,8 @@ def _process_epub_task(
         session.add(task)
         session.commit()
 
-        qdrant_store = QdrantStore(settings)
         embedding_profile = build_embedding_profile(settings)
-        embedding_provider = get_provider(embedding_profile, settings.model_dump())
+        embedding_provider = create_embedding_provider(settings)
 
         try:
             # Ekstraksi EPUB
