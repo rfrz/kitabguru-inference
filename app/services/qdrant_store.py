@@ -125,6 +125,34 @@ class QdrantStore:
             points=points
         )
 
+    # Memperbarui payload metadata (seperti judul dan penulis) pada titik-titik Qdrant terkait book_id tertentu
+    def update_book_metadata(self, book_id: str, new_title: Optional[str] = None, new_author: Optional[str] = None) -> None:
+        # Jika koleksi tidak terdaftar, hentikan proses
+        if not self.client.collection_exists(self.collection_name):
+            return
+            
+        # Membuat payload update
+        payload_update: dict[str, Any] = {}
+        if new_title is not None:
+            payload_update["title"] = new_title
+        if new_author is not None:
+            payload_update["author"] = new_author
+            
+        if not payload_update:
+            return
+
+        # Menyusun filter pencocokan kolom book_id
+        qdrant_filter = models.Filter(
+            must=[models.FieldCondition(key="book_id", match=models.MatchValue(value=book_id))]
+        )
+        
+        # Memperbarui payload di Qdrant
+        self.client.set_payload(
+            collection_name=self.collection_name,
+            payload=payload_update,
+            points=models.FilterSelector(filter=qdrant_filter)
+        )
+
     # Mengonversi format filter dictionary kustom menjadi objek models.Filter resmi Qdrant
     def _build_qdrant_filter(self, where: Optional[dict[str, Any]]) -> Optional[models.Filter]:
         # Jika filter kosong, kembalikan None

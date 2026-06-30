@@ -37,3 +37,25 @@ class Document(SQLModel, table=True):
     embedding_dimension: Optional[int] = None
     # Kolom embedding_fingerprint menyimpan hash sidik jari konfigurasi embedding untuk melacak keaslian model
     embedding_fingerprint: str = Field(index=True)
+
+
+# Kelas model DocumentTask mendefinisikan struktur tabel untuk melacak status proses latar belakang import EPUB
+class DocumentTask(SQLModel, table=True):
+    __tablename__ = "document_tasks"
+
+    # ID tugas yang unik
+    task_id: str = Field(primary_key=True, index=True)
+    # ID buku terkait (bisa kosong jika gagal di tahap awal ekstraksi)
+    book_id: Optional[str] = None
+    # Judul buku sementara yang dideteksi
+    title: Optional[str] = None
+    # Status pemrosesan ("PENDING", "PROCESSING", "COMPLETED", "FAILED")
+    status: str = Field(default="PENDING", index=True)
+    # Jumlah chunk yang telah berhasil diproses
+    progress: int = Field(default=0)
+    # Total keseluruhan chunk yang perlu diproses
+    total_chunks: int = Field(default=0)
+    # Pesan kesalahan jika terjadi kegagalan (opsional)
+    error_message: Optional[str] = None
+    # Tanggal dan waktu tugas dibuat
+    created_at: datetime = Field(default_factory=utc_now, nullable=False)

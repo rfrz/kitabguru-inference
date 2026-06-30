@@ -105,9 +105,16 @@ def request_json(
 
 
 # Mengambil daftar seluruh dokumen buku yang terdaftar di database backend
-def fetch_documents(base_url: str, headers: dict[str, str] | None = None) -> tuple[list[dict[str, Any]], str | None]:
+def fetch_documents(base_url: str, skip: int = 0, limit: int = 100, search: str = "", headers: dict[str, str] | None = None) -> tuple[list[dict[str, Any]], str | None]:
+    # Menyusun parameter query
+    params = []
+    if skip > 0: params.append(f"skip={skip}")
+    if limit != 100: params.append(f"limit={limit}")
+    if search: params.append(f"search={search}")
+    query_str = "?" + "&".join(params) if params else ""
+    
     # Mengirim request GET ke endpoint '/api/documents'
-    payload, error = request_json("GET", base_url, "/api/documents", headers=headers)
+    payload, error = request_json("GET", base_url, f"/api/documents{query_str}", headers=headers)
     # Jika terjadi error
     if error:
         # Kembalikan list kosong dan detail error
@@ -190,7 +197,40 @@ def render_health(base_url: str, headers: dict[str, str] | None = None) -> None:
         st.warning("Backend merespons, tapi status health tidak dikenali.")
 
 
+import time
+
 # Merender tab antarmuka pengelolaan impor dan penghapusan buku dokumen EPUB
+@st.dialog("Edit Metadata Document")
+def edit_metadata_dialog(base_url: str, document: dict[str, Any], headers: dict[str, str] | None = None):
+    new_title = st.text_input("Title", value=document.get("title") or "")
+    new_author = st.text_input("Author", value=document.get("author") or "")
+    
+    if st.button("Save Changes"):
+        data = {}
+        if new_title.strip() != (document.get("title") or ""):
+            data["title"] = new_title.strip()
+        if new_author.strip() != (document.get("author") or ""):
+            data["author"] = new_author.strip()
+            
+        if not data:
+            st.warning("Tidak ada perubahan.")
+            return
+            
+        with st.spinner("Menyimpan..."):
+            _, error = request_json(
+                "PATCH",
+                base_url,
+                f"/api/documents/{document.get('book_id')}",
+                json=data,
+                headers=headers,
+            )
+        if error:
+            st.error(error)
+        else:
+            st.success("Berhasil diperbarui!")
+            time.sleep(0.5)
+            st.rerun()
+
 def render_document_manager(base_url: str, documents: list[dict[str, Any]], headers: dict[str, str] | None = None) -> None:
     st.subheader("Import EPUB")
     # Membuat form input di Streamlit untuk pendaftaran berkas EPUB
@@ -226,7 +266,7 @@ def render_document_manager(base_url: str, documents: list[dict[str, Any]], head
                 )
             }
             # Menampilkan spinner animasi loading proses pemrosesan RAG
-            with st.spinner("Mengimport dan membuat embedding..."):
+            with st.spinner("Memulai import..."):
                 # Mengirim request POST impor dokumen ke backend
                 payload, error = request_json(
                     "POST",
@@ -237,15 +277,46 @@ def render_document_manager(base_url: str, documents: list[dict[str, Any]], head
                     timeout=IMPORT_TIMEOUT,
                     headers=headers,
                 )
-            # Jika proses impor gagal
+            
+            # Jika proses impor gagal dimulai
             if error:
-                # Tampilkan kotak error merah
                 st.error(error)
-            # Jika sukses
+            elif payload and "task_id" in payload:
+                task_id = payload["task_id"]
+                progress_container = st.empty()
+                
+                # Memulai polling status task
+                while True:
+                    task_payload, task_error = request_json(
+                        "GET",
+                        base_url,
+                        f"/api/documents/tasks/{task_id}",
+                        headers=headers,
+                    )
+                    
+                    if task_error:
+                        progress_container.error(f"Gagal mengecek status: {task_error}")
+                        break
+                        
+                    status = task_payload.get("status")
+                    progress = task_payload.get("progress", 0)
+                    total_chunks = task_payload.get("total_chunks", 0)
+                    
+                    if status == "COMPLETED":
+                        progress_container.success(f"Berhasil import: {payload.get('title', uploaded_file.name)}")
+                        time.sleep(1)
+                        st.rerun()
+                        break
+                    elif status == "FAILED":
+                        error_msg = task_payload.get("error_message", "Unknown error")
+                        progress_container.error(f"Import gagal: {error_msg}")
+                        break
+                    else:
+                        progress_str = f"{progress}/{total_chunks}" if total_chunks else "0/?"
+                        progress_container.info(f"Status: {status} | Chunks diproses: {progress_str} ...")
+                        time.sleep(1.5)
             else:
-                # Tampilkan pesan sukses hijau
                 st.success(f"Berhasil import: {payload.get('title', uploaded_file.name)}")
-                # Memuat ulang halaman Streamlit agar daftar dokumen diperbarui
                 st.rerun()
 
     st.subheader("Dokumen")
@@ -275,19 +346,28 @@ def render_document_manager(base_url: str, documents: list[dict[str, Any]], head
                     f"{document.get('embedding_model')} | {status_text}"
                 )
             with top_right:
-                # Menyiapkan key unik untuk tombol delete di baris ini
-                delete_key = f"delete_{document.get('book_id')}"
-                # Menampilkan tombol Delete berwarna merah jika diklik
-                if st.button("Delete", key=delete_key, use_container_width=True):
+                # Membagi kanan menjadi 2 tombol berjejer
+                btn_left, btn_right = st.columns(2)
+                with btn_left:
+                    # Tombol Edit
+                    edit_key = f"edit_{document.get('book_id')}"
+                    if st.button("Edit", key=edit_key, use_container_width=True):
+                        edit_metadata_dialog(base_url, document, headers)
+                        
+                with btn_right:
+                    # Menyiapkan key unik untuk tombol delete di baris ini
+                    delete_key = f"delete_{document.get('book_id')}"
+                    # Menampilkan tombol Delete berwarna merah jika diklik
+                    if st.button("Delete", key=delete_key, use_container_width=True):
                     # Menampilkan spinner animasi loading hapus
-                    with st.spinner("Menghapus dokumen..."):
-                        # Mengirim request DELETE ke API backend
-                        _, error = request_json(
-                            "DELETE",
-                            base_url,
-                            f"/api/documents/{document.get('book_id')}",
-                            headers=headers,
-                        )
+                        with st.spinner("Menghapus dokumen..."):
+                            # Mengirim request DELETE ke API backend
+                            _, error = request_json(
+                                "DELETE",
+                                base_url,
+                                f"/api/documents/{document.get('book_id')}",
+                                headers=headers,
+                            )
                     # Jika gagal menghapus
                     if error:
                         st.error(error)
@@ -424,7 +504,7 @@ def main() -> None:
             st.rerun()
 
     # Memuat daftar buku dokumen dari backend
-    documents, documents_error = fetch_documents(normalized_base_url, headers)
+    documents, documents_error = fetch_documents(normalized_base_url, headers=headers)
     # Jika gagal mengambil daftar dokumen
     if documents_error:
         # Tampilkan kotak peringatan kuning warning

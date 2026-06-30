@@ -79,18 +79,30 @@ class DocumentRead(BaseModel):
     is_embedding_current: bool
 
 
-# Skema DocumentImportResponse merespon status keberhasilan impor buku epub baru
+# Skema DocumentImportResponse merespon status awal impor buku epub (sekarang asinkron)
 class DocumentImportResponse(BaseModel):
-    # ID buku
-    book_id: str
-    # Judul buku yang dideteksi
-    title: str
-    # Penulis buku
-    author: Optional[str] = None
-    # Jumlah total potongan teks yang di-ingest ke Qdrant
+    # ID tugas yang diberikan untuk melacak progres unggahan
+    task_id: str
+    # Status awal
+    status: str
+
+
+# Skema DocumentTaskResponse memvalidasi format respon saat mengecek status tugas import EPUB
+class DocumentTaskResponse(BaseModel):
+    task_id: str
+    book_id: Optional[str] = None
+    title: Optional[str] = None
+    status: str
+    progress: int
     total_chunks: int
-    # Detail konfigurasi status embedding yang dihasilkan
-    embedding: EmbeddingState
+    error_message: Optional[str] = None
+    created_at: datetime
+
+
+# Skema DocumentUpdate memvalidasi request body saat mengupdate metadata buku
+class DocumentUpdate(BaseModel):
+    title: Optional[str] = None
+    author: Optional[str] = None
 
 
 # Skema ProviderFailure mencatat logs kesalahan ketika sebuah provider LLM dalam antrean fallback mengalami error
