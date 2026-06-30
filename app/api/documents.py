@@ -26,7 +26,7 @@ from app.dependencies import get_app_settings, get_qdrant_store, get_embedding_p
 # Mengimpor model tabel Document dan DocumentTask database
 from app.models import Document, DocumentTask
 # Mengimpor profil embedding, provider embedding, dan fungsi pembangun profil model aktif
-from app.providers.embeddings import EmbeddingProfile, EmbeddingProvider, build_embedding_profile, get_provider
+from app.providers.embeddings import EmbeddingProfile, EmbeddingProvider, build_embedding_profile
 # Mengimpor skema data untuk respons import dokumen, detail dokumen, status model embedding, dll
 from app.schemas import (
     DocumentImportResponse,
